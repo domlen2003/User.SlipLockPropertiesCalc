@@ -286,18 +286,25 @@ namespace DDFRacerPlugin
 
         public void DataUpdate(PluginManager pluginManager, ref GameData data)
         {
-            if (!data.GameRunning || data.NewData == null) return;
-
-            // Check if car changed - reset max values
-            string carId = data.NewData.CarId ?? "N/A";
-            if (carId != CurrentCarId && !string.IsNullOrEmpty(carId) && carId != "N/A")
+            try
             {
-                MaxSway = 5.0;
-                MaxSurge = 5.0;
-                MaxDecel = 5.0;
-                CurrentCarId = carId;
-                SimHub.Logging.Current.Info($"Car changed to {carId}, reset max values");
-            }
+                if (!data.GameRunning || data.NewData == null)
+                {
+                    // Reset all values when game not running
+                    ShakeITAvailable = "Game not running";
+                    return;
+                }
+
+                // Check if car changed - reset max values
+                string carId = data.NewData.CarId ?? "N/A";
+                if (carId != CurrentCarId && !string.IsNullOrEmpty(carId) && carId != "N/A")
+                {
+                    MaxSway = 5.0;
+                    MaxSurge = 5.0;
+                    MaxDecel = 5.0;
+                    CurrentCarId = carId;
+                    SimHub.Logging.Current.Info($"Car changed to {carId}, reset max values");
+                }
 
             // Get standard telemetry
             double throttle = data.NewData.Throttle;
@@ -411,6 +418,12 @@ namespace DDFRacerPlugin
 
             // ===== CUSTOM SLIP CALCULATION (iRacing Compatible) =====
             CalculateCustomSlip(pluginManager, data);
+            }
+            catch (Exception ex)
+            {
+                SimHub.Logging.Current.Error($"DDF Racer DataUpdate error: {ex.Message}");
+                SimHub.Logging.Current.Error($"Stack trace: {ex.StackTrace}");
+            }
         }
 
         private bool CheckShakeITAvailable(PluginManager pluginManager)
@@ -482,13 +495,15 @@ namespace DDFRacerPlugin
 
         private void CalculateCustomSlip(PluginManager pluginManager, GameData data)
         {
-            // Get ShakeIT raw slip values for comparison
-            double[] shakeITSlipValues = new double[4];
-            for (int i = 0; i < 4; i++)
+            try
             {
-                shakeITSlipValues[i] = GetShakeITDouble(pluginManager,
-                    $"ShakeITBSV3Plugin.Export.WheelSlip.{wheelNames[i]}", 0);
-            }
+                // Get ShakeIT raw slip values for comparison
+                double[] shakeITSlipValues = new double[4];
+                for (int i = 0; i < 4; i++)
+                {
+                    shakeITSlipValues[i] = GetShakeITDouble(pluginManager,
+                        $"ShakeITBSV3Plugin.Export.WheelSlip.{wheelNames[i]}", 0);
+                }
 
             // Update ShakeIT raw values for UI display
             ShakeITSlipFL = shakeITSlipValues[0];
@@ -594,6 +609,12 @@ namespace DDFRacerPlugin
                     $"DDFRacer.CustomSlip.{wheelNames[i]}",
                     this.GetType(), customSlipValues[i]);
             }
+            }
+            catch (Exception ex)
+            {
+                SimHub.Logging.Current.Error($"DDF Racer CalculateCustomSlip error: {ex.Message}");
+                SimHub.Logging.Current.Error($"Stack trace: {ex.StackTrace}");
+            }
         }
 
         public void End(PluginManager pluginManager)
@@ -608,6 +629,7 @@ namespace DDFRacerPlugin
         /// </summary>
         public Control GetWPFSettingsControl(PluginManager pluginManager)
         {
+            SimHub.Logging.Current.Info("DDF Racer GetWPFSettingsControl called");
             return new SettingsControl(this);
         }
     }
