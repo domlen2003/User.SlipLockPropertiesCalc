@@ -226,8 +226,105 @@ namespace DDFRacerPlugin
             set { _customSlipRR = value; OnPropertyChanged(); }
         }
 
-        private readonly string[] wheelNames = { "FrontLeft", "FrontRight", "RearLeft", "RearRight" };
+        // Wheel Speed values for debugging (m/s)
+        private double _wheelSpeedFL;
+        public double WheelSpeedFL
+        {
+            get => _wheelSpeedFL;
+            set { _wheelSpeedFL = value; OnPropertyChanged(); }
+        }
 
+        private double _wheelSpeedFR;
+        public double WheelSpeedFR
+        {
+            get => _wheelSpeedFR;
+            set { _wheelSpeedFR = value; OnPropertyChanged(); }
+        }
+
+        private double _wheelSpeedRL;
+        public double WheelSpeedRL
+        {
+            get => _wheelSpeedRL;
+            set { _wheelSpeedRL = value; OnPropertyChanged(); }
+        }
+
+        private double _wheelSpeedRR;
+        public double WheelSpeedRR
+        {
+            get => _wheelSpeedRR;
+            set { _wheelSpeedRR = value; OnPropertyChanged(); }
+        }
+
+        private double _vehicleSpeedMS;
+        public double VehicleSpeedMS
+        {
+            get => _vehicleSpeedMS;
+            set { _vehicleSpeedMS = value; OnPropertyChanged(); }
+        }
+
+        // Gear learning status display properties
+        private int _currentGear;
+        public int CurrentGear
+        {
+            get => _currentGear;
+            set { _currentGear = value; OnPropertyChanged(); }
+        }
+
+        private string _gear1Status;
+        public string Gear1Status { get => _gear1Status; set { _gear1Status = value; OnPropertyChanged(); } }
+
+        private string _gear2Status;
+        public string Gear2Status { get => _gear2Status; set { _gear2Status = value; OnPropertyChanged(); } }
+
+        private string _gear3Status;
+        public string Gear3Status { get => _gear3Status; set { _gear3Status = value; OnPropertyChanged(); } }
+
+        private string _gear4Status;
+        public string Gear4Status { get => _gear4Status; set { _gear4Status = value; OnPropertyChanged(); } }
+
+        private string _gear5Status;
+        public string Gear5Status { get => _gear5Status; set { _gear5Status = value; OnPropertyChanged(); } }
+
+        private string _gear6Status;
+        public string Gear6Status { get => _gear6Status; set { _gear6Status = value; OnPropertyChanged(); } }
+
+        private string _gear7Status;
+        public string Gear7Status { get => _gear7Status; set { _gear7Status = value; OnPropertyChanged(); } }
+
+        private string _gear8Status;
+        public string Gear8Status { get => _gear8Status; set { _gear8Status = value; OnPropertyChanged(); } }
+
+        // Learning condition indicators
+        private string _speedCondition;
+        public string SpeedCondition { get => _speedCondition; set { _speedCondition = value; OnPropertyChanged(); } }
+
+        private string _throttleCondition;
+        public string ThrottleCondition { get => _throttleCondition; set { _throttleCondition = value; OnPropertyChanged(); } }
+
+        private string _brakeCondition;
+        public string BrakeCondition { get => _brakeCondition; set { _brakeCondition = value; OnPropertyChanged(); } }
+
+        private string _straightCondition;
+        public string StraightCondition { get => _straightCondition; set { _straightCondition = value; OnPropertyChanged(); } }
+
+        private bool _isLearning;
+        public bool IsLearning { get => _isLearning; set { _isLearning = value; OnPropertyChanged(); } }
+
+        private string _learningStatusText;
+        public string LearningStatusText { get => _learningStatusText; set { _learningStatusText = value; OnPropertyChanged(); } }
+
+        private int _maxGears;
+        public int MaxGears { get => _maxGears; set { _maxGears = value; OnPropertyChanged(); } }
+
+        // Gear ratio learning state (session-based, not persistent)
+        private double[] gearRatios = new double[10]; // Index 0-9 for gears (0=neutral, 1-8=gears, 9=reverse)
+        private int[] gearRatioSampleCount = new int[10]; // How many samples we've collected
+        private const int minSamplesForRatio = 10; // Need 10 good samples before we trust the ratio
+        private const double wheelCircumference = 2.0; // Estimated, will be refined during learning (meters)
+        private string currentCarId = "";
+        private int logCounter = 0; // For throttled logging
+
+        private readonly string[] wheelNames = { "FrontLeft", "FrontRight", "RearLeft", "RearRight" };
         public void Init(PluginManager pluginManager)
         {
             SimHub.Logging.Current.Info("Starting DDF Racer Plugin");
@@ -505,115 +602,238 @@ namespace DDFRacerPlugin
                         $"ShakeITBSV3Plugin.Export.WheelSlip.{wheelNames[i]}", 0);
                 }
 
-            // Update ShakeIT raw values for UI display
+            // Update ShakeIT raw values for UI display (already in 0-100 range)
             ShakeITSlipFL = shakeITSlipValues[0];
             ShakeITSlipFR = shakeITSlipValues[1];
             ShakeITSlipRL = shakeITSlipValues[2];
             ShakeITSlipRR = shakeITSlipValues[3];
 
-            // iRacing-specific slip calculation
-            // Get telemetry data
-            double vehicleSpeed = data.NewData.SpeedKmh / 3.6; // Convert to m/s
-            double latAccel = data.NewData.AccelerationSway ?? 0;  // Lateral G
-            double longAccel = data.NewData.AccelerationSurge ?? 0; // Longitudinal G
-
-            // Minimum speed threshold to avoid division by zero
-            const double minSpeed = 0.1; // m/s (0.36 km/h)
-
-            double[] customSlipValues = new double[4];
-
-            if (vehicleSpeed < minSpeed)
+            // Reset gear ratios if car changed
+            string carId = data.NewData.CarId ?? "";
+            if (carId != currentCarId && !string.IsNullOrEmpty(carId))
             {
-                // Below minimum speed, set all slip to zero
+                SimHub.Logging.Current.Info($"DDF Racer: Car changed to {carId}, resetting gear ratio learning and max gears");
+                Array.Clear(gearRatios, 0, gearRatios.Length);
+                Array.Clear(gearRatioSampleCount, 0, gearRatioSampleCount.Length);
+                MaxGears = 0; // Will be determined by highest gear seen during driving
+                currentCarId = carId;
+            }
+
+            // RPM-based wheel speed calculation with gear ratio learning
+            double vehicleSpeed = data.NewData.SpeedKmh / 3.6; // Convert to m/s
+            VehicleSpeedMS = vehicleSpeed;
+
+            // Get RPM from game raw data telemetry
+            double rpm = 0;
+            try
+            {
+                var rpmValue = pluginManager.GetPropertyValue("DataCorePlugin.GameRawData.Telemetry.RPM");
+                if (rpmValue != null)
+                {
+                    rpm = Convert.ToDouble(rpmValue);
+                }
+            }
+            catch { rpm = 0; }
+
+            int gear = 0;
+            try
+            {
+                var gearValue = pluginManager.GetPropertyValue("Gear");
+                if (gearValue != null)
+                {
+                    gear = Convert.ToInt32(gearValue);
+                }
+            }
+            catch { gear = 0; }
+
+            // Determine max gears from highest gear seen during driving
+            if (gear > 0 && gear > MaxGears)
+            {
+                MaxGears = gear;
+                SimHub.Logging.Current.Info($"DDF Racer: Max gears updated to {MaxGears} (highest gear seen)");
+            }
+
+            double throttle = data.NewData.Throttle;
+            double brake = data.NewData.Brake;
+            double latAccel = Math.Abs(data.NewData.AccelerationSway ?? 0);
+
+            // Minimum speed for learning and calculation
+            const double minSpeed = 5.0; // m/s (18 km/h)
+
+            double[] wheelSpeeds = new double[4];
+
+            // Check if we're in good conditions to learn gear ratios
+            bool speedOk = vehicleSpeed > minSpeed;
+            bool rpmOk = rpm > 1000;
+            bool gearOk = gear > 0 && gear <= MaxGears; // Valid forward gear
+            bool throttleOk = throttle > 15 && throttle < 85;
+            bool brakeOk = brake < 5;
+            bool straightOk = latAccel < 3.0; // Note: AccelerationSway units not in G, but works for straightness check
+
+            bool isLearningCondition = speedOk && rpmOk && gearOk && throttleOk && brakeOk && straightOk;
+
+            // Update condition indicators
+            SpeedCondition = speedOk ? $"✓ {vehicleSpeed:F1} m/s" : $"✗ {vehicleSpeed:F1} m/s";
+            ThrottleCondition = throttleOk ? $"✓ {throttle:F0}%" : $"✗ {throttle:F0}%";
+            BrakeCondition = brakeOk ? $"✓ {brake:F0}%" : $"✗ {brake:F0}%";
+            StraightCondition = straightOk ? $"✓ {latAccel:F2}" : $"✗ {latAccel:F2}";
+            IsLearning = isLearningCondition;
+            LearningStatusText = isLearningCondition ? "LEARNING" : "WAITING";
+
+            // Detailed logging for why learning isn't happening (once per second)
+            logCounter++;
+            if (logCounter >= 60 && !isLearningCondition)
+            {
+                logCounter = 0;
+                string reasons = "";
+                if (!speedOk) reasons += $"Speed too low ({vehicleSpeed:F1} < {minSpeed}), ";
+                if (!rpmOk) reasons += $"RPM too low ({rpm:F0} < 1000), ";
+                if (!gearOk) reasons += $"Invalid gear (gear={gear}, maxGears={MaxGears}), ";
+                if (!throttleOk) reasons += $"Throttle wrong ({throttle:F0}% not in 15-85%), ";
+                if (!brakeOk) reasons += $"Braking ({brake:F0}% >= 5%), ";
+                if (!straightOk) reasons += $"Turning ({latAccel:F2} >= 3.0), ";
+                SimHub.Logging.Current.Info($"DDF Racer: NOT LEARNING - {reasons.TrimEnd(',', ' ')}");
+            }
+            else if (logCounter >= 60 && isLearningCondition)
+            {
+                logCounter = 0;
+            }
+
+            // Learn gear ratio if conditions are good
+            if (isLearningCondition)
+            {
+                // Calculate effective ratio: RPM per m/s of vehicle speed
+                // This combines gear ratio, final drive, and wheel circumference
+                double effectiveRatio = rpm / vehicleSpeed;
+
+                // Running average of gear ratios
+                if (gearRatioSampleCount[gear] == 0)
+                {
+                    gearRatios[gear] = effectiveRatio;
+                    gearRatioSampleCount[gear] = 1;
+                    SimHub.Logging.Current.Info($"DDF Racer: Started learning gear {gear}, ratio={effectiveRatio:F1}");
+                }
+                else
+                {
+                    // Weighted average (new sample gets 10% weight)
+                    gearRatios[gear] = gearRatios[gear] * 0.9 + effectiveRatio * 0.1;
+                    gearRatioSampleCount[gear]++;
+
+                    // Log when gear is fully learned
+                    if (gearRatioSampleCount[gear] == minSamplesForRatio)
+                    {
+                        SimHub.Logging.Current.Info($"DDF Racer: Gear {gear} LEARNED! Ratio={gearRatios[gear]:F1} (samples={minSamplesForRatio})");
+                    }
+                }
+            }
+
+            // Calculate theoretical wheel speed if we have learned the ratio
+            if (gear > 0 && gear <= MaxGears && gearRatioSampleCount[gear] >= minSamplesForRatio)
+            {
+                // Theoretical speed based on RPM and learned ratio
+                double theoreticalSpeed = rpm / gearRatios[gear];
+
+                // For now, display theoretical speed for all wheels
+                // (Later we can add per-wheel variation using suspension/G-forces)
                 for (int i = 0; i < 4; i++)
                 {
-                    customSlipValues[i] = 0.0;
+                    wheelSpeeds[i] = theoreticalSpeed;
                 }
             }
             else
             {
-                // Try to get iRacing wheel speeds
-                // Property names might be: LFspeed, RFspeed, LRspeed, RRspeed
-                string[] iRacingWheelProps = { "LFspeed", "RFspeed", "LRspeed", "RRspeed" };
-                double[] wheelSpeeds = new double[4];
-                bool hasWheelSpeeds = true;
-
+                // Still learning or invalid gear - show actual vehicle speed
                 for (int i = 0; i < 4; i++)
                 {
-                    var wheelSpeed = pluginManager.GetPropertyValue(iRacingWheelProps[i]);
-                    if (wheelSpeed != null)
-                    {
-                        try
-                        {
-                            wheelSpeeds[i] = Convert.ToDouble(wheelSpeed);
-                        }
-                        catch
-                        {
-                            hasWheelSpeeds = false;
-                            break;
-                        }
-                    }
-                    else
-                    {
-                        hasWheelSpeeds = false;
-                        break;
-                    }
-                }
-
-                if (hasWheelSpeeds)
-                {
-                    // Calculate slip for each wheel with Schnirbus modulation
-                    // Modulation factors (tunable)
-                    const double latFactor = 0.1;
-                    const double longFactor = 0.1;
-
-                    for (int i = 0; i < 4; i++)
-                    {
-                        // Base slip calculation: (wheel_speed - vehicle_speed) / vehicle_speed
-                        double baseSlip = (wheelSpeeds[i] - vehicleSpeed) / vehicleSpeed;
-
-                        // Apply Schnirbus modulation based on wheel position
-                        // FL = base - lat - long
-                        // FR = base + lat - long
-                        // RL = base - lat + long
-                        // RR = base + lat + long
-                        double latMod = (i % 2 == 0) ? -latAccel : latAccel;  // Left=-1, Right=+1
-                        double longMod = (i < 2) ? -longAccel : longAccel;     // Front=-1, Rear=+1
-
-                        customSlipValues[i] = baseSlip + (latMod * latFactor) + (longMod * longFactor);
-
-                        // Clamp to reasonable range
-                        customSlipValues[i] = Math.Max(-2.0, Math.Min(2.0, customSlipValues[i]));
-                    }
-                }
-                else
-                {
-                    // Fallback: no wheel speeds available, set to zero or use ShakeIT values
-                    for (int i = 0; i < 4; i++)
-                    {
-                        customSlipValues[i] = 0.0;
-                    }
+                    wheelSpeeds[i] = vehicleSpeed;
                 }
             }
 
-            // Update UI properties
-            CustomSlipFL = customSlipValues[0];
-            CustomSlipFR = customSlipValues[1];
-            CustomSlipRL = customSlipValues[2];
-            CustomSlipRR = customSlipValues[3];
+            // Update wheel speed UI properties (theoretical speeds from RPM)
+            WheelSpeedFL = wheelSpeeds[0];
+            WheelSpeedFR = wheelSpeeds[1];
+            WheelSpeedRL = wheelSpeeds[2];
+            WheelSpeedRR = wheelSpeeds[3];
+
+            // Calculate slip (difference between theoretical and actual)
+            double[] slipValues = new double[4];
+            for (int i = 0; i < 4; i++)
+            {
+                if (vehicleSpeed > 1.0) // Only calculate slip above 1 m/s
+                {
+                    slipValues[i] = ((wheelSpeeds[i] - vehicleSpeed) / vehicleSpeed) * 100.0; // Percentage
+                    slipValues[i] = Math.Max(-100.0, Math.Min(100.0, slipValues[i])); // Clamp
+                }
+                else
+                {
+                    slipValues[i] = 0.0;
+                }
+            }
+
+            // Update UI properties (show slip percentage)
+            CustomSlipFL = slipValues[0];
+            CustomSlipFR = slipValues[1];
+            CustomSlipRL = slipValues[2];
+            CustomSlipRR = slipValues[3];
+
+            // Update current gear display
+            CurrentGear = gear;
+
+            // Update gear learning status strings
+            UpdateGearStatus(1, ref _gear1Status);
+            UpdateGearStatus(2, ref _gear2Status);
+            UpdateGearStatus(3, ref _gear3Status);
+            UpdateGearStatus(4, ref _gear4Status);
+            UpdateGearStatus(5, ref _gear5Status);
+            UpdateGearStatus(6, ref _gear6Status);
+            UpdateGearStatus(7, ref _gear7Status);
+            UpdateGearStatus(8, ref _gear8Status);
+
+            // Trigger property changed for gear statuses
+            OnPropertyChanged(nameof(Gear1Status));
+            OnPropertyChanged(nameof(Gear2Status));
+            OnPropertyChanged(nameof(Gear3Status));
+            OnPropertyChanged(nameof(Gear4Status));
+            OnPropertyChanged(nameof(Gear5Status));
+            OnPropertyChanged(nameof(Gear6Status));
+            OnPropertyChanged(nameof(Gear7Status));
+            OnPropertyChanged(nameof(Gear8Status));
 
             // Export to SimHub
             for (int i = 0; i < 4; i++)
             {
                 pluginManager.SetPropertyValue(
                     $"DDFRacer.CustomSlip.{wheelNames[i]}",
-                    this.GetType(), customSlipValues[i]);
+                    this.GetType(), slipValues[i]);
             }
             }
             catch (Exception ex)
             {
                 SimHub.Logging.Current.Error($"DDF Racer CalculateCustomSlip error: {ex.Message}");
                 SimHub.Logging.Current.Error($"Stack trace: {ex.StackTrace}");
+            }
+        }
+
+        private void UpdateGearStatus(int gearNum, ref string statusString)
+        {
+            int samples = gearRatioSampleCount[gearNum];
+            bool learned = samples >= minSamplesForRatio;
+
+            if (learned)
+            {
+                // Learned - show ratio
+                statusString = $"✓ {gearRatios[gearNum]:F1}";
+            }
+            else if (samples > 0)
+            {
+                // Learning - show progress
+                int percent = (samples * 100) / minSamplesForRatio;
+                statusString = $"⋯ {percent}%";
+            }
+            else
+            {
+                // Not started
+                statusString = "—";
             }
         }
 

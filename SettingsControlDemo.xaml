@@ -240,7 +240,7 @@
                     <styles:SHSectionSeparator />
 
                     <!-- WHEEL SLIP COMPARISON Section -->
-                    <styles:SHSubSection Title="WHEEL SLIP COMPARISON (iRacing)">
+                    <styles:SHSubSection Title="WHEEL SLIP COMPARISON (ShakeIT vs Custom Odometer-based)">
                         <Grid Margin="10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -273,16 +273,16 @@
 
                                     <!-- Front Left -->
                                     <Grid Grid.Row="1" Grid.Column="0">
-                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="-1" Maximum="1" Value="{Binding ShakeITSlipFL}" />
-                                        <Label Content="{Binding ShakeITSlipFL, StringFormat='{}{0:F3}'}"
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding ShakeITSlipFL}" />
+                                        <Label Content="{Binding ShakeITSlipFL, StringFormat='{}{0:F1}'}"
                                                FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <Label Grid.Row="2" Grid.Column="0" Content="FL" HorizontalAlignment="Center" FontWeight="Bold"/>
 
                                     <!-- Front Right -->
                                     <Grid Grid.Row="1" Grid.Column="2">
-                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="-1" Maximum="1" Value="{Binding ShakeITSlipFR}" />
-                                        <Label Content="{Binding ShakeITSlipFR, StringFormat='{}{0:F3}'}"
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding ShakeITSlipFR}" />
+                                        <Label Content="{Binding ShakeITSlipFR, StringFormat='{}{0:F1}'}"
                                                FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <Label Grid.Row="2" Grid.Column="2" Content="FR" HorizontalAlignment="Center" FontWeight="Bold"/>
@@ -293,16 +293,16 @@
 
                                     <!-- Rear Left -->
                                     <Grid Grid.Row="4" Grid.Column="0">
-                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="-1" Maximum="1" Value="{Binding ShakeITSlipRL}" />
-                                        <Label Content="{Binding ShakeITSlipRL, StringFormat='{}{0:F3}'}"
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding ShakeITSlipRL}" />
+                                        <Label Content="{Binding ShakeITSlipRL, StringFormat='{}{0:F1}'}"
                                                FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <Label Grid.Row="5" Grid.Column="0" Content="RL" HorizontalAlignment="Center" FontWeight="Bold"/>
 
                                     <!-- Rear Right -->
                                     <Grid Grid.Row="4" Grid.Column="2">
-                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="-1" Maximum="1" Value="{Binding ShakeITSlipRR}" />
-                                        <Label Content="{Binding ShakeITSlipRR, StringFormat='{}{0:F3}'}"
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding ShakeITSlipRR}" />
+                                        <Label Content="{Binding ShakeITSlipRR, StringFormat='{}{0:F1}'}"
                                                FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <Label Grid.Row="5" Grid.Column="2" Content="RR" HorizontalAlignment="Center" FontWeight="Bold"/>
@@ -312,9 +312,10 @@
                             <!-- SEPARATOR -->
                             <Border Grid.Column="1" Width="2" Background="Gray" Margin="9,0"/>
 
-                            <!-- RIGHT: Custom Calculated Slip -->
+                            <!-- RIGHT: RPM-based Slip -->
                             <StackPanel Grid.Column="2">
-                                <Label Content="Custom Calculated Slip" HorizontalAlignment="Center" FontWeight="Bold" FontSize="16" Margin="0,0,0,10"/>
+                                <Label Content="Custom Slip (%)" HorizontalAlignment="Center" FontWeight="Bold" FontSize="16" Margin="0,0,0,5"/>
+                                <Label Content="(RPM-based learning)" HorizontalAlignment="Center" FontStyle="Italic" FontSize="12" Margin="0,0,0,5"/>
 
                                 <Grid HorizontalAlignment="Center">
                                     <Grid.ColumnDefinitions>
@@ -337,16 +338,16 @@
 
                                     <!-- Front Left -->
                                     <Grid Grid.Row="1" Grid.Column="0">
-                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="-1" Maximum="1" Value="{Binding CustomSlipFL}" />
-                                        <Label Content="{Binding CustomSlipFL, StringFormat='{}{0:F3}'}"
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding CustomSlipFL}" />
+                                        <Label Content="{Binding CustomSlipFL, StringFormat='{}{0:F1}%'}"
                                                FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <Label Grid.Row="2" Grid.Column="0" Content="FL" HorizontalAlignment="Center" FontWeight="Bold"/>
 
                                     <!-- Front Right -->
                                     <Grid Grid.Row="1" Grid.Column="2">
-                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="-1" Maximum="1" Value="{Binding CustomSlipFR}" />
-                                        <Label Content="{Binding CustomSlipFR, StringFormat='{}{0:F3}'}"
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding CustomSlipFR}" />
+                                        <Label Content="{Binding CustomSlipFR, StringFormat='{}{0:F1}%'}"
                                                FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <Label Grid.Row="2" Grid.Column="2" Content="FR" HorizontalAlignment="Center" FontWeight="Bold"/>
@@ -357,22 +358,114 @@
 
                                     <!-- Rear Left -->
                                     <Grid Grid.Row="4" Grid.Column="0">
-                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="-1" Maximum="1" Value="{Binding CustomSlipRL}" />
-                                        <Label Content="{Binding CustomSlipRL, StringFormat='{}{0:F3}'}"
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding CustomSlipRL}" />
+                                        <Label Content="{Binding CustomSlipRL, StringFormat='{}{0:F1}%'}"
                                                FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <Label Grid.Row="5" Grid.Column="0" Content="RL" HorizontalAlignment="Center" FontWeight="Bold"/>
 
                                     <!-- Rear Right -->
                                     <Grid Grid.Row="4" Grid.Column="2">
-                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="-1" Maximum="1" Value="{Binding CustomSlipRR}" />
-                                        <Label Content="{Binding CustomSlipRR, StringFormat='{}{0:F3}'}"
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding CustomSlipRR}" />
+                                        <Label Content="{Binding CustomSlipRR, StringFormat='{}{0:F1}%'}"
                                                FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Grid>
                                     <Label Grid.Row="5" Grid.Column="2" Content="RR" HorizontalAlignment="Center" FontWeight="Bold"/>
                                 </Grid>
                             </StackPanel>
                         </Grid>
+                    </styles:SHSubSection>
+
+                    <styles:SHSectionSeparator />
+
+                    <!-- Learning Conditions Section -->
+                    <styles:SHSubSection Title="GEAR LEARNING CONDITIONS">
+                        <Grid Margin="10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="30"/>
+                            </Grid.RowDefinitions>
+
+                            <Label Grid.Row="0" Grid.Column="0" Content="Speed (>18 km/h)" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="0" Content="{Binding SpeedCondition}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+
+                            <Label Grid.Row="0" Grid.Column="1" Content="Throttle (15-85%)" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="1" Content="{Binding ThrottleCondition}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+
+                            <Label Grid.Row="0" Grid.Column="2" Content="Brake (&lt;5%)" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="2" Content="{Binding BrakeCondition}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+
+                            <Label Grid.Row="0" Grid.Column="3" Content="Straight (&lt;3.0)" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="3" Content="{Binding StraightCondition}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+
+                            <Label Grid.Row="0" Grid.Column="4" Grid.RowSpan="2" Content="{Binding LearningStatusText}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" FontSize="18"/>
+                        </Grid>
+                    </styles:SHSubSection>
+
+                    <styles:SHSectionSeparator />
+
+                    <!-- Gear Learning Status Section -->
+                    <styles:SHSubSection Title="GEAR LEARNING STATUS">
+                        <StackPanel>
+                            <Label Content="{Binding MaxGears, StringFormat='Highest gear seen: {0}'}"
+                                   HorizontalAlignment="Center" FontWeight="Bold" FontSize="12" Margin="0,5,0,10"/>
+                            <Label Content="(Max gears determined automatically from driving)"
+                                   HorizontalAlignment="Center" FontSize="10" Margin="0,0,0,10" Foreground="Gray"/>
+                        <Grid Margin="10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="100"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="80"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="40"/>
+                            </Grid.RowDefinitions>
+
+                            <Label Grid.Row="0" Grid.Column="0" Content="Current Gear:" HorizontalAlignment="Right" FontWeight="Bold" FontSize="12" Margin="0,0,10,0"/>
+                            <Label Grid.Row="1" Grid.Column="0" Content="{Binding CurrentGear}" HorizontalAlignment="Right" FontFamily="Consolas" FontSize="20" FontWeight="Bold" Margin="0,0,10,0"/>
+
+                            <Label Grid.Row="0" Grid.Column="1" Content="1st" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="1" Content="{Binding Gear1Status}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+
+                            <Label Grid.Row="0" Grid.Column="2" Content="2nd" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="2" Content="{Binding Gear2Status}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+
+                            <Label Grid.Row="0" Grid.Column="3" Content="3rd" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="3" Content="{Binding Gear3Status}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+
+                            <Label Grid.Row="0" Grid.Column="4" Content="4th" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="4" Content="{Binding Gear4Status}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+
+                            <Label Grid.Row="0" Grid.Column="5" Content="5th" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="5" Content="{Binding Gear5Status}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+
+                            <Label Grid.Row="0" Grid.Column="6" Content="6th" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="6" Content="{Binding Gear6Status}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+
+                            <Label Grid.Row="0" Grid.Column="7" Content="7th" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="7" Content="{Binding Gear7Status}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+
+                            <Label Grid.Row="0" Grid.Column="8" Content="8th" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                            <Label Grid.Row="1" Grid.Column="8" Content="{Binding Gear8Status}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+                        </Grid>
+                        </StackPanel>
                     </styles:SHSubSection>
 
                     <styles:SHSectionSeparator />

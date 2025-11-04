@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd iRacing wheel slip comparison and fix calculation issues\n\n- Fixed throttle blending: Set multi = 0.2 for sway and surge calculations\n- Fixed SlipBrake: Now uses calculated blend_brake instead of raw slip\n- Simplified ABS calculation to remove redundant multiplication\n- Added ShakeIT raw slip display properties (8 new properties)\n- Added custom iRacing-compatible slip calculation using Schnirbus method\n- Implemented side-by-side slip comparison UI (ShakeIT vs Custom)\n- Custom slip uses wheel speeds with lateral/longitudinal acceleration modulation\n- Exported DDFRacer.CustomSlip properties for all 4 wheels\n- Added .gitignore for C# Visual Studio projects\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(dir:*)",
+      "Bash(where:*)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\amd64\\MSBuild.exe\" User.PluginSdkDemo.sln /p:Configuration=Release /t:Rebuild)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\amd64\\MSBuild.exe\" User.PluginSdkDemo.csproj -p:Configuration=Release -t:Rebuild)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd error handling and logging to DataUpdate methods\n\n- Wrapped DataUpdate in try-catch with logging\n- Wrapped CalculateCustomSlip in try-catch with logging  \n- Added \"Game not running\" status message\n- Added logging to GetWPFSettingsControl method\n- All errors now logged to SimHub log for debugging\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd comprehensive project documentation\n\n- PROJECT_KNOWLEDGE.md: Full technical documentation (600+ lines)\n- CLAUDE.md: AI assistant context and quick reference\n- Documents all calculations, formulas, dependencies\n- Includes debugging tips, testing checklist, architecture\n- Explains iRacing limitations and Schnirbus workaround\n- Quick reference for future development\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "WebSearch",
+      "WebFetch(domain:sajax.github.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(findstr:*)",
+      "Bash(cmd /c \"dir /od /b \"\"C:\\Program Files (x86)\\SimHub\\Logs\"\"\")",
+      "Bash(taskkill:*)",
+      "Bash(cmd /c \"taskkill /F /IM SimHub.exe\")",
+      "Bash(copy /Y \"C:\\Program Files (x86)\\SimHub\\PluginSdk\\User.SlipLockPropertiesCalc\\bin\\Release\\User.PluginSdkDemo.dll\" \"C:\\Program Files (x86)\\SimHub\"\")",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\amd64\\MSBuild.exe\" User.PluginSdkDemo.csproj -p:Configuration=Release -t:Clean)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
