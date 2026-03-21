@@ -1,9 +1,9 @@
-﻿namespace User.PluginSdkDemo
+namespace User.SlipLockPropertiesCalc
 {
     /// <summary>
     /// Settings class, make sure it can be correctly serialized using JSON.net
     /// </summary>
-    public class DataPluginDemoSettings
+    public class SlipLockSettings
     {
         public int SpeedWarningLevel = 100;
     }

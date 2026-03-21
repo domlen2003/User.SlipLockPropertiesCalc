@@ -1,15 +1,15 @@
-# CLAUDE.md - AI Assistant Context for DDF Racer Physics Plugin
+# CLAUDE.md - AI Assistant Context for SlipLock Properties Calc Plugin
 
 ## Quick Project Summary
 
-This is a **SimHub plugin** (C# .NET 4.8 WPF) that calculates advanced physics effects for racing simulation motion platforms. It replicates DDF Racer v2.5.1 profile calculations and adds custom iRacing-compatible wheel slip calculations.
+This is a **SimHub plugin** (C# .NET 4.8 WPF) that calculates advanced physics effects for racing simulation motion platforms. It replicates SlipLock v2.5.1 profile calculations and adds custom iRacing-compatible wheel slip calculations.
 
 ## Critical Files
 
-- **DDFRacerPlugin.cs** (640 lines) - Main plugin, all calculation logic
+- **SlipLockPropertiesCalc.cs** (640 lines) - Main plugin, all calculation logic
 - **SettingsControlDemo.xaml** (390 lines) - WPF UI with data bindings
 - **SettingsControlDemo.xaml.cs** - Sets DataContext for UI binding
-- **User.PluginSdkDemo.csproj** - Build configuration
+- **User.SlipLockPropertiesCalc.csproj** - Build configuration
 
 ## Current State (as of 2025-11-03)
 
@@ -66,14 +66,14 @@ if (vehicleSpeed < 0.1) // 0.36 km/h
 ## Exported Properties (20 total)
 
 ### Per-Wheel (16 properties)
-- `DDFRacer.SwayThrottle.{FrontLeft|FrontRight|RearLeft|RearRight}`
-- `DDFRacer.SurgeThrottle.{FrontLeft|FrontRight|RearLeft|RearRight}`
-- `DDFRacer.SlipBrake.{FrontLeft|FrontRight|RearLeft|RearRight}`
-- `DDFRacer.CustomSlip.{FrontLeft|FrontRight|RearLeft|RearRight}`
+- `SlipLock.SwayThrottle.{FrontLeft|FrontRight|RearLeft|RearRight}`
+- `SlipLock.SurgeThrottle.{FrontLeft|FrontRight|RearLeft|RearRight}`
+- `SlipLock.SlipBrake.{FrontLeft|FrontRight|RearLeft|RearRight}`
+- `SlipLock.CustomSlip.{FrontLeft|FrontRight|RearLeft|RearRight}`
 
 ### Global (4 properties)
-- `DDFRacer.MaxSway` / `MaxSurge` / `MaxDecel`
-- `DDFRacer.ABSBrake`
+- `SlipLock.MaxSway` / `MaxSurge` / `MaxDecel`
+- `SlipLock.ABSBrake`
 
 ## Dependencies & Data Sources
 
@@ -98,11 +98,11 @@ if (vehicleSpeed < 0.1) // 0.36 km/h
 
 ```bash
 # Build (from project directory)
-msbuild User.PluginSdkDemo.csproj -p:Configuration=Release -t:Rebuild
+msbuild User.SlipLockPropertiesCalc.csproj -p:Configuration=Release -t:Rebuild
 
 # Post-build automatically copies to:
-%SIMHUB_INSTALL_PATH%\User.PluginSdkDemo.dll
-%SIMHUB_INSTALL_PATH%\User.PluginSdkDemo.pdb
+%SIMHUB_INSTALL_PATH%\User.SlipLockPropertiesCalc.dll
+%SIMHUB_INSTALL_PATH%\User.SlipLockPropertiesCalc.pdb
 
 # Requires SimHub restart to reload plugin
 ```
@@ -114,12 +114,12 @@ msbuild User.PluginSdkDemo.csproj -p:Configuration=Release -t:Rebuild
 
 ### Log Messages to Look For
 ```
-"Starting DDF Racer Plugin"
-"DDF Racer Plugin initialized"
-"DDF Racer GetWPFSettingsControl called"
+"Starting SlipLock Plugin"
+"SlipLock Plugin initialized"
+"SlipLock GetWPFSettingsControl called"
 "Car changed to {carId}, reset max values"
-"DDF Racer DataUpdate error: ..."
-"DDF Racer CalculateCustomSlip error: ..."
+"SlipLock DataUpdate error: ..."
+"SlipLock CalculateCustomSlip error: ..."
 ```
 
 ### Common Issues
@@ -159,7 +159,7 @@ End() → save settings
 
 ### UI Binding
 ```
-DDFRacerPlugin (this)
+SlipLockPropertiesCalc (this)
    ↓ DataContext
 SettingsControl (UserControl)
    ↓ XAML Bindings
@@ -268,7 +268,7 @@ wheelNames[3] = "RearRight"   // RR
 
 ## Key Methods
 
-### DDFRacerPlugin.cs
+### SlipLockPropertiesCalc.cs
 
 **Init(PluginManager pluginManager)** - Lines 231-285
 - Registers all 20 properties
@@ -324,7 +324,7 @@ wheelNames[3] = "RearRight"   // RR
 ```csharp
 customSlipValues[i] = calculatedValue;
 CustomSlipFL = customSlipValues[0];  // UI binding
-pluginManager.SetPropertyValue("DDFRacer.CustomSlip.FrontLeft", this.GetType(), customSlipValues[0]);  // Export
+pluginManager.SetPropertyValue("SlipLock.CustomSlip.FrontLeft", this.GetType(), customSlipValues[0]);  // Export
 ```
 
 ### When Adding New Properties
@@ -342,8 +342,8 @@ pluginManager.SetPropertyValue("DDFRacer.CustomSlip.FrontLeft", this.GetType(), 
 
 ## Important Notes
 
-⚠️ **DO NOT rename the plugin class** - SimHub uses the class name
-⚠️ **DO NOT change namespace** - Breaks existing profiles
+⚠️ **Plugin class is `SlipLockPropertiesCalc`** - SimHub uses the class name, do not rename again
+⚠️ **Namespace is `SlipLockPropertiesCalc`** - Changing it breaks existing profiles
 ⚠️ **DO restart SimHub** after rebuilding - DLL is locked while running
 ⚠️ **DO preserve property names** - Users may reference them in profiles
 ✅ **DO add logging** to new code for debugging

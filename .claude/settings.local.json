@@ -18,7 +18,11 @@
       "Bash(taskkill:*)",
       "Bash(cmd /c \"taskkill /F /IM SimHub.exe\")",
       "Bash(copy /Y \"C:\\Program Files (x86)\\SimHub\\PluginSdk\\User.SlipLockPropertiesCalc\\bin\\Release\\User.PluginSdkDemo.dll\" \"C:\\Program Files (x86)\\SimHub\"\")",
-      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\amd64\\MSBuild.exe\" User.PluginSdkDemo.csproj -p:Configuration=Release -t:Clean)"
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\amd64\\MSBuild.exe\" User.PluginSdkDemo.csproj -p:Configuration=Release -t:Clean)",
+      "Bash(find \"C:\\\\Program Files \\(x86\\)\\\\SimHub\\\\PluginSdk\\\\User.SlipLockPropertiesCalc\" -type f -name \"*.cs\" -o -name \"*.xaml\" -o -name \"*.csproj\" -o -name \"*.md\")",
+      "Bash(find \"C:\\\\Program Files \\(x86\\)\\\\SimHub\\\\PluginSdk\\\\User.SlipLockPropertiesCalc\" -type f \\\\\\( -name \"*.cs\" -o -name \"*.xaml\" -o -name \"*.csproj\" -o -name \"*.sln\" -o -name \"*.md\" -o -name \"*.resx\" \\\\\\))",
+      "Bash(mv DDFRacerPlugin.cs SlipLockPropertiesCalc.cs)",
+      "Bash(mv User.PluginSdkDemo.csproj User.SlipLockPropertiesCalc.csproj)"
     ],
     "deny": [],
     "ask": []

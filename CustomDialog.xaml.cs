@@ -14,7 +14,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 
-namespace User.PluginSdkDemo
+namespace User.SlipLockPropertiesCalc
 {
     /// <summary>
     /// Logique d'interaction pour CustomDialog.xaml

@@ -1,17 +1,17 @@
 ﻿using System.Windows.Controls;
 
-namespace DDFRacerPlugin
+namespace User.SlipLockPropertiesCalc
 {
     public partial class SettingsControl : UserControl
     {
-        public DDFRacerPlugin Plugin { get; }
+        public SlipLockPropertiesCalc Plugin { get; }
 
         public SettingsControl()
         {
             InitializeComponent();
         }
 
-        public SettingsControl(DDFRacerPlugin plugin) : this()
+        public SettingsControl(SlipLockPropertiesCalc plugin) : this()
         {
             this.Plugin = plugin;
             this.DataContext = plugin;

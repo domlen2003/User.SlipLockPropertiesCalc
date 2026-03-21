@@ -1,8 +1,8 @@
-# DDF Racer Physics Plugin - Project Knowledge
+# SlipLock Properties Calc Plugin - Project Knowledge
 
 ## Project Overview
 
-**Name:** DDF Racer Physics Plugin
+**Name:** SlipLock Properties Calc Plugin
 **Platform:** SimHub Plugin for Windows
 **Language:** C# (.NET Framework 4.8)
 **Purpose:** Calculate advanced physics effects for racing simulation motion platforms and haptic feedback
@@ -11,7 +11,7 @@
 
 ### Core Components
 
-1. **DDFRacerPlugin.cs** - Main plugin class (640+ lines)
+1. **SlipLockPropertiesCalc.cs** - Main plugin class (640+ lines)
    - Implements `IPlugin`, `IDataPlugin`, `IWPFSettingsV2`, `INotifyPropertyChanged`
    - Handles real-time telemetry processing at 60+ Hz
    - Exports properties to SimHub for use in profiles
@@ -37,7 +37,7 @@ blend_sway = (output_sway * 0.8) + (output_sway * throttleNorm * 0.2)
 ```
 
 **Purpose:** Lateral G-forces modulated by wheel slip and throttle position
-**Exported Properties:** `DDFRacer.SwayThrottle.FrontLeft/FrontRight/RearLeft/RearRight`
+**Exported Properties:** `SlipLock.SwayThrottle.FrontLeft/FrontRight/RearLeft/RearRight`
 
 ### 2. Surge Throttle (Longitudinal + Slip + Throttle)
 **Formula:**
@@ -50,7 +50,7 @@ blend_surge = (output_surge * 0.8) + (output_surge * throttleNorm * 0.2)
 ```
 
 **Purpose:** Forward/backward acceleration modulated by slip and throttle
-**Exported Properties:** `DDFRacer.SurgeThrottle.FrontLeft/FrontRight/RearLeft/RearRight`
+**Exported Properties:** `SlipLock.SurgeThrottle.FrontLeft/FrontRight/RearLeft/RearRight`
 
 ### 3. Slip Brake (Slip + Deceleration + Brake)
 **Formula:**
@@ -63,7 +63,7 @@ blend_brake = (output_brake * 0.8) + (output_brake * brakeNorm * 0.2)
 ```
 
 **Purpose:** Wheel slip during braking with brake pedal modulation
-**Exported Properties:** `DDFRacer.SlipBrake.FrontLeft/FrontRight/RearLeft/RearRight`
+**Exported Properties:** `SlipLock.SlipBrake.FrontLeft/FrontRight/RearLeft/RearRight`
 
 ### 4. ABS Brake
 **Formula:**
@@ -72,7 +72,7 @@ absBrake = absActive ? brake : 0.0
 ```
 
 **Purpose:** Brake intensity when ABS is active
-**Exported Property:** `DDFRacer.ABSBrake`
+**Exported Property:** `SlipLock.ABSBrake`
 
 ### 5. Custom Slip (iRacing Compatible)
 **Formula (Schnirbus Method):**
@@ -89,7 +89,7 @@ customSlip = baseSlip + (latMod * 0.1) + (longMod * 0.1)
 ```
 
 **Purpose:** iRacing-compatible slip calculation using wheel speeds and G-force modulation
-**Exported Properties:** `DDFRacer.CustomSlip.FrontLeft/FrontRight/RearLeft/RearRight`
+**Exported Properties:** `SlipLock.CustomSlip.FrontLeft/FrontRight/RearLeft/RearRight`
 
 ## Dependencies
 
@@ -218,20 +218,20 @@ slipRatio = (wheelSpeed - vehicleSpeed) / vehicleSpeed
 ## Exported SimHub Properties
 
 ### Per-Wheel Effects (12 properties)
-- `DDFRacer.SwayThrottle.FrontLeft/FrontRight/RearLeft/RearRight`
-- `DDFRacer.SurgeThrottle.FrontLeft/FrontRight/RearLeft/RearRight`
-- `DDFRacer.SlipBrake.FrontLeft/FrontRight/RearLeft/RearRight`
+- `SlipLock.SwayThrottle.FrontLeft/FrontRight/RearLeft/RearRight`
+- `SlipLock.SurgeThrottle.FrontLeft/FrontRight/RearLeft/RearRight`
+- `SlipLock.SlipBrake.FrontLeft/FrontRight/RearLeft/RearRight`
 
 ### Global Values (3 properties)
-- `DDFRacer.MaxSway`
-- `DDFRacer.MaxSurge`
-- `DDFRacer.MaxDecel`
+- `SlipLock.MaxSway`
+- `SlipLock.MaxSurge`
+- `SlipLock.MaxDecel`
 
 ### ABS (1 property)
-- `DDFRacer.ABSBrake`
+- `SlipLock.ABSBrake`
 
 ### Custom Slip (4 properties)
-- `DDFRacer.CustomSlip.FrontLeft/FrontRight/RearLeft/RearRight`
+- `SlipLock.CustomSlip.FrontLeft/FrontRight/RearLeft/RearRight`
 
 **Total: 20 exported properties**
 
@@ -239,7 +239,7 @@ slipRatio = (wheelSpeed - vehicleSpeed) / vehicleSpeed
 
 ### Build Process
 ```bash
-msbuild User.PluginSdkDemo.csproj -p:Configuration=Release -t:Rebuild
+msbuild User.SlipLockPropertiesCalc.csproj -p:Configuration=Release -t:Rebuild
 ```
 
 ### Post-Build Event
@@ -252,8 +252,8 @@ Automatically copies DLL and PDB to SimHub installation directory.
 `SIMHUB_INSTALL_PATH` must be set to SimHub directory (typically `C:\Program Files (x86)\SimHub\`)
 
 ### Files Copied
-- `User.PluginSdkDemo.dll` - Plugin binary
-- `User.PluginSdkDemo.pdb` - Debug symbols
+- `User.SlipLockPropertiesCalc.dll` - Plugin binary
+- `User.SlipLockPropertiesCalc.pdb` - Debug symbols
 
 ## Error Handling
 
@@ -263,7 +263,7 @@ All critical methods wrapped in try-catch with logging:
 try {
     // Calculation logic
 } catch (Exception ex) {
-    SimHub.Logging.Current.Error($"DDF Racer error: {ex.Message}");
+    SimHub.Logging.Current.Error($"SlipLock error: {ex.Message}");
     SimHub.Logging.Current.Error($"Stack trace: {ex.StackTrace}");
 }
 ```
@@ -280,21 +280,21 @@ try {
 ### Check Plugin is Loaded
 Look for in SimHub log:
 ```
-"Starting DDF Racer Plugin"
-"DDF Racer Plugin initialized"
+"Starting SlipLock Plugin"
+"SlipLock Plugin initialized"
 ```
 
 ### Check UI is Loading
 Look for:
 ```
-"DDF Racer GetWPFSettingsControl called"
+"SlipLock GetWPFSettingsControl called"
 ```
 
 ### Check for Errors
 Search log for:
 ```
-"DDF Racer DataUpdate error:"
-"DDF Racer CalculateCustomSlip error:"
+"SlipLock DataUpdate error:"
+"SlipLock CalculateCustomSlip error:"
 ```
 
 ### Common Issues
@@ -326,7 +326,7 @@ Search log for:
 ## References
 
 ### Formula Sources
-- **DDF Racer v2.5.1** - Original profile calculations
+- **SlipLock v2.5.1** - Original profile calculations
 - **Schnirbus Method** - Community iRacing workaround for per-wheel variation
 - **SAE J670** - Standard slip ratio formula
 - **viper4gh/SimHub-Plugin-CalcLngWheelSlip** - Open source slip calculation reference
@@ -342,14 +342,14 @@ Search log for:
 ```
 User.SlipLockPropertiesCalc/
 ├── .gitignore                      # Git ignore patterns
-├── DDFRacerPlugin.cs              # Main plugin logic (640 lines)
-├── DataPluginDemoSettings.cs      # Settings class (unused currently)
+├── SlipLockPropertiesCalc.cs              # Main plugin logic (640 lines)
+├── SlipLockSettings.cs      # Settings class (unused currently)
 ├── SettingsControlDemo.xaml       # UI layout (390 lines)
 ├── SettingsControlDemo.xaml.cs    # UI code-behind
 ├── CustomDialog.xaml              # Unused dialog
 ├── CustomDialog.xaml.cs           # Unused dialog code
-├── User.PluginSdkDemo.csproj     # Project file
-├── User.PluginSdkDemo.sln        # Solution file
+├── User.SlipLockPropertiesCalc.csproj  # Project file
+├── User.SlipLockPropertiesCalc.sln    # Solution file
 ├── GettingStarted.txt            # SimHub plugin SDK notes
 ├── sdkmenuicon.png               # Plugin icon (24×24)
 ├── Properties/
@@ -422,7 +422,7 @@ User.SlipLockPropertiesCalc/
 ## Version History
 
 **v1.0** (2025-11-03)
-- Initial implementation with DDF Racer profile calculations
+- Initial implementation with SlipLock profile calculations
 - Added iRacing custom slip with Schnirbus modulation
 - Side-by-side slip comparison UI
 - Error handling and logging

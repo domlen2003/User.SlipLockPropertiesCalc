@@ -6,14 +6,14 @@ using System.Runtime.CompilerServices;
 using System.Windows.Controls;
 using System.Windows.Media;
 
-namespace DDFRacerPlugin
+namespace User.SlipLockPropertiesCalc
 {
-    [PluginDescription("Replicates DDF Racer v2.5.1 profile calculations")]
+    [PluginDescription("Calculates wheel slip, lock, and physics properties for motion platforms")]
     [PluginAuthor("Your Name")]
-    [PluginName("DDF Racer Physics")]
-    public class DDFRacerPlugin : IPlugin, IDataPlugin, IWPFSettingsV2, INotifyPropertyChanged
+    [PluginName("Slip Lock Properties Calc")]
+    public class SlipLockPropertiesCalc : IPlugin, IDataPlugin, IWPFSettingsV2, INotifyPropertyChanged
     {
-        public DataPluginDemoSettings Settings;
+        public SlipLockSettings Settings;
 
         /// <summary>
         /// Instance of the current plugin manager
@@ -23,12 +23,12 @@ namespace DDFRacerPlugin
         /// <summary>
         /// Gets the left menu icon. Icon must be 24x24 and compatible with black and white display.
         /// </summary>
-        public ImageSource PictureIcon => this.ToIcon(User.PluginSdkDemo.Properties.Resources.sdkmenuicon);
+        public ImageSource PictureIcon => this.ToIcon(User.SlipLockPropertiesCalc.Properties.Resources.sdkmenuicon);
 
         /// <summary>
         /// Gets a short plugin title to show in left menu. Return null if you want to use the title as defined in PluginName attribute.
         /// </summary>
-        public string LeftMenuTitle => "DDF Racer";
+        public string LeftMenuTitle => "Slip Lock Calc";
 
         // INotifyPropertyChanged implementation
         public event PropertyChangedEventHandler PropertyChanged;
@@ -327,18 +327,18 @@ namespace DDFRacerPlugin
         private readonly string[] wheelNames = { "FrontLeft", "FrontRight", "RearLeft", "RearRight" };
         public void Init(PluginManager pluginManager)
         {
-            SimHub.Logging.Current.Info("Starting DDF Racer Plugin");
+            SimHub.Logging.Current.Info("Starting SlipLock Plugin");
 
             this.PluginManager = pluginManager;
 
             // Load settings
-            Settings = this.ReadCommonSettings<DataPluginDemoSettings>("GeneralSettings", () => new DataPluginDemoSettings());
+            Settings = this.ReadCommonSettings<SlipLockSettings>("GeneralSettings", () => new SlipLockSettings());
 
             // Export SWAY * THROTTLE % MIXED HALF values
             foreach (string wheel in wheelNames)
             {
                 pluginManager.AddProperty(
-                    $"DDFRacer.SwayThrottle.{wheel}",
+                    $"SlipLock.SwayThrottle.{wheel}",
                     this.GetType(), 0.0);
             }
 
@@ -346,7 +346,7 @@ namespace DDFRacerPlugin
             foreach (string wheel in wheelNames)
             {
                 pluginManager.AddProperty(
-                    $"DDFRacer.SurgeThrottle.{wheel}",
+                    $"SlipLock.SurgeThrottle.{wheel}",
                     this.GetType(), 0.0);
             }
 
@@ -354,31 +354,31 @@ namespace DDFRacerPlugin
             foreach (string wheel in wheelNames)
             {
                 pluginManager.AddProperty(
-                    $"DDFRacer.SlipBrake.{wheel}",
+                    $"SlipLock.SlipBrake.{wheel}",
                     this.GetType(), 0.0);
             }
 
             // Export max values
-            pluginManager.AddProperty("DDFRacer.MaxSway",
+            pluginManager.AddProperty("SlipLock.MaxSway",
                                      this.GetType(), 5.0);
-            pluginManager.AddProperty("DDFRacer.MaxSurge",
+            pluginManager.AddProperty("SlipLock.MaxSurge",
                                      this.GetType(), 5.0);
-            pluginManager.AddProperty("DDFRacer.MaxDecel",
+            pluginManager.AddProperty("SlipLock.MaxDecel",
                                      this.GetType(), 5.0);
 
             // Export ABS * BRAKE %
-            pluginManager.AddProperty("DDFRacer.ABSBrake",
+            pluginManager.AddProperty("SlipLock.ABSBrake",
                                      this.GetType(), 0.0);
 
             // Export Custom Slip values (iRacing compatible)
             foreach (string wheel in wheelNames)
             {
                 pluginManager.AddProperty(
-                    $"DDFRacer.CustomSlip.{wheel}",
+                    $"SlipLock.CustomSlip.{wheel}",
                     this.GetType(), 0.0);
             }
 
-            SimHub.Logging.Current.Info("DDF Racer Plugin initialized");
+            SimHub.Logging.Current.Info("SlipLock Plugin initialized");
         }
 
         public void DataUpdate(PluginManager pluginManager, ref GameData data)
@@ -456,7 +456,7 @@ namespace DDFRacerPlugin
 
                 swayThrottleValues[i] = blend_sway;
                 pluginManager.SetPropertyValue(
-                    $"DDFRacer.SwayThrottle.{wheel}",
+                    $"SlipLock.SwayThrottle.{wheel}",
                     this.GetType(), blend_sway);
 
                 // ===== SURGE * THROTTLE % MIXED HALF =====
@@ -468,7 +468,7 @@ namespace DDFRacerPlugin
 
                 surgeThrottleValues[i] = blend_surge;
                 pluginManager.SetPropertyValue(
-                    $"DDFRacer.SurgeThrottle.{wheel}",
+                    $"SlipLock.SurgeThrottle.{wheel}",
                     this.GetType(), blend_surge);
 
                 // ===== SLIP * SURGE (BRAKES ONLY) =====
@@ -484,7 +484,7 @@ namespace DDFRacerPlugin
 
                 slipBrakeValues[i] = slipBrake;
                 pluginManager.SetPropertyValue(
-                    $"DDFRacer.SlipBrake.{wheel}",
+                    $"SlipLock.SlipBrake.{wheel}",
                     this.GetType(), slipBrake);
             }
 
@@ -510,7 +510,7 @@ namespace DDFRacerPlugin
 
             ABSBrake = absBrake;
             pluginManager.SetPropertyValue(
-                "DDFRacer.ABSBrake",
+                "SlipLock.ABSBrake",
                 this.GetType(), absBrake);
 
             // ===== CUSTOM SLIP CALCULATION (iRacing Compatible) =====
@@ -518,7 +518,7 @@ namespace DDFRacerPlugin
             }
             catch (Exception ex)
             {
-                SimHub.Logging.Current.Error($"DDF Racer DataUpdate error: {ex.Message}");
+                SimHub.Logging.Current.Error($"SlipLock DataUpdate error: {ex.Message}");
                 SimHub.Logging.Current.Error($"Stack trace: {ex.StackTrace}");
             }
         }
@@ -582,11 +582,11 @@ namespace DDFRacerPlugin
             }
 
             // Export to SimHub
-            pluginManager.SetPropertyValue("DDFRacer.MaxSway",
+            pluginManager.SetPropertyValue("SlipLock.MaxSway",
                                           this.GetType(), MaxSway);
-            pluginManager.SetPropertyValue("DDFRacer.MaxSurge",
+            pluginManager.SetPropertyValue("SlipLock.MaxSurge",
                                           this.GetType(), MaxSurge);
-            pluginManager.SetPropertyValue("DDFRacer.MaxDecel",
+            pluginManager.SetPropertyValue("SlipLock.MaxDecel",
                                           this.GetType(), MaxDecel);
         }
 
@@ -612,7 +612,7 @@ namespace DDFRacerPlugin
             string carId = data.NewData.CarId ?? "";
             if (carId != currentCarId && !string.IsNullOrEmpty(carId))
             {
-                SimHub.Logging.Current.Info($"DDF Racer: Car changed to {carId}, resetting gear ratio learning and max gears");
+                SimHub.Logging.Current.Info($"SlipLock: Car changed to {carId}, resetting gear ratio learning and max gears");
                 Array.Clear(gearRatios, 0, gearRatios.Length);
                 Array.Clear(gearRatioSampleCount, 0, gearRatioSampleCount.Length);
                 MaxGears = 0; // Will be determined by highest gear seen during driving
@@ -650,7 +650,7 @@ namespace DDFRacerPlugin
             if (gear > 0 && gear > MaxGears)
             {
                 MaxGears = gear;
-                SimHub.Logging.Current.Info($"DDF Racer: Max gears updated to {MaxGears} (highest gear seen)");
+                SimHub.Logging.Current.Info($"SlipLock: Max gears updated to {MaxGears} (highest gear seen)");
             }
 
             double throttle = data.NewData.Throttle;
@@ -692,7 +692,7 @@ namespace DDFRacerPlugin
                 if (!throttleOk) reasons += $"Throttle wrong ({throttle:F0}% not in 15-85%), ";
                 if (!brakeOk) reasons += $"Braking ({brake:F0}% >= 5%), ";
                 if (!straightOk) reasons += $"Turning ({latAccel:F2} >= 3.0), ";
-                SimHub.Logging.Current.Info($"DDF Racer: NOT LEARNING - {reasons.TrimEnd(',', ' ')}");
+                SimHub.Logging.Current.Info($"SlipLock: NOT LEARNING - {reasons.TrimEnd(',', ' ')}");
             }
             else if (logCounter >= 60 && isLearningCondition)
             {
@@ -711,7 +711,7 @@ namespace DDFRacerPlugin
                 {
                     gearRatios[gear] = effectiveRatio;
                     gearRatioSampleCount[gear] = 1;
-                    SimHub.Logging.Current.Info($"DDF Racer: Started learning gear {gear}, ratio={effectiveRatio:F1}");
+                    SimHub.Logging.Current.Info($"SlipLock: Started learning gear {gear}, ratio={effectiveRatio:F1}");
                 }
                 else
                 {
@@ -722,7 +722,7 @@ namespace DDFRacerPlugin
                     // Log when gear is fully learned
                     if (gearRatioSampleCount[gear] == minSamplesForRatio)
                     {
-                        SimHub.Logging.Current.Info($"DDF Racer: Gear {gear} LEARNED! Ratio={gearRatios[gear]:F1} (samples={minSamplesForRatio})");
+                        SimHub.Logging.Current.Info($"SlipLock: Gear {gear} LEARNED! Ratio={gearRatios[gear]:F1} (samples={minSamplesForRatio})");
                     }
                 }
             }
@@ -803,13 +803,13 @@ namespace DDFRacerPlugin
             for (int i = 0; i < 4; i++)
             {
                 pluginManager.SetPropertyValue(
-                    $"DDFRacer.CustomSlip.{wheelNames[i]}",
+                    $"SlipLock.CustomSlip.{wheelNames[i]}",
                     this.GetType(), slipValues[i]);
             }
             }
             catch (Exception ex)
             {
-                SimHub.Logging.Current.Error($"DDF Racer CalculateCustomSlip error: {ex.Message}");
+                SimHub.Logging.Current.Error($"SlipLock CalculateCustomSlip error: {ex.Message}");
                 SimHub.Logging.Current.Error($"Stack trace: {ex.StackTrace}");
             }
         }
@@ -841,7 +841,7 @@ namespace DDFRacerPlugin
         {
             // Save settings
             this.SaveCommonSettings("GeneralSettings", Settings);
-            SimHub.Logging.Current.Info("DDF Racer Plugin stopped");
+            SimHub.Logging.Current.Info("SlipLock Plugin stopped");
         }
 
         /// <summary>
@@ -849,16 +849,8 @@ namespace DDFRacerPlugin
         /// </summary>
         public Control GetWPFSettingsControl(PluginManager pluginManager)
         {
-            SimHub.Logging.Current.Info("DDF Racer GetWPFSettingsControl called");
+            SimHub.Logging.Current.Info("SlipLock GetWPFSettingsControl called");
             return new SettingsControl(this);
         }
-    }
-
-    /// <summary>
-    /// Settings class
-    /// </summary>
-    public class DataPluginDemoSettings
-    {
-        public int Unused = 0;
     }
 }

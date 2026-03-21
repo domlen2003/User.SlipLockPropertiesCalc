@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="DDFRacerPlugin.SettingsControl"
+﻿<UserControl x:Class="User.SlipLockPropertiesCalc.SettingsControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -7,7 +7,7 @@
              mc:Ignorable="d">
     <ScrollViewer>
         <Grid>
-            <styles:SHSection Title="DDF RACER PLUGIN - REAL-TIME VALUES" ShowSeparator="True">
+            <styles:SHSection Title="SLIP LOCK PROPERTIES CALC - REAL-TIME VALUES" ShowSeparator="True">
                 <StackPanel>
 
                     <!-- Max Values Section -->

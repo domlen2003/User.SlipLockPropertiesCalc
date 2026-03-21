@@ -7,8 +7,8 @@
     <ProjectGuid>{833040C9-FE5E-4CCF-B21D-71979E049B6B}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>User.PluginSdkDemo</RootNamespace>
-    <AssemblyName>User.PluginSdkDemo</AssemblyName>
+    <RootNamespace>User.SlipLockPropertiesCalc</RootNamespace>
+    <AssemblyName>User.SlipLockPropertiesCalc</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <TargetFrameworkProfile />
@@ -99,8 +99,8 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="DDFRacerPlugin.cs" />
-    <Compile Include="DataPluginDemoSettings.cs" />
+    <Compile Include="SlipLockPropertiesCalc.cs" />
+    <Compile Include="SlipLockSettings.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Properties\Resources.Designer.cs">
       <AutoGen>True</AutoGen>
