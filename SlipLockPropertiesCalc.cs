@@ -1,6 +1,7 @@
 using GameReaderCommon;
 using SimHub.Plugins;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Controls;
@@ -15,281 +16,153 @@ namespace User.SlipLockPropertiesCalc
     {
         public SlipLockSettings Settings;
 
-        /// <summary>
-        /// Instance of the current plugin manager
-        /// </summary>
         public PluginManager PluginManager { get; set; }
-
-        /// <summary>
-        /// Gets the left menu icon. Icon must be 24x24 and compatible with black and white display.
-        /// </summary>
-        public ImageSource PictureIcon => this.ToIcon(User.SlipLockPropertiesCalc.Properties.Resources.sdkmenuicon);
-
-        /// <summary>
-        /// Gets a short plugin title to show in left menu. Return null if you want to use the title as defined in PluginName attribute.
-        /// </summary>
+        public ImageSource PictureIcon => this.ToIcon(Properties.Resources.sdkmenuicon);
         public string LeftMenuTitle => "Slip Lock Calc";
 
-        // INotifyPropertyChanged implementation
         public event PropertyChangedEventHandler PropertyChanged;
-
         private void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
-        // UI Bindable Properties
-        private double _maxSway = 5.0;
-        public double MaxSway
-        {
-            get => _maxSway;
-            set { _maxSway = value; OnPropertyChanged(); }
-        }
+        // ===================== Detection State Machine =====================
 
-        private double _maxSurge = 5.0;
-        public double MaxSurge
-        {
-            get => _maxSurge;
-            set { _maxSurge = value; OnPropertyChanged(); }
-        }
+        private enum SlipDetectionState { Loading, Detecting, UsePerWheel, UseMono }
+        private SlipDetectionState _detectionState = SlipDetectionState.Loading;
+        private int _dynamicFrameCount = 0;
+        private const int DetectionFrames = 60; // ~1s at 60Hz
+        private bool _retestRequested = false;
+        private string _lastGameName = "";
+        private bool _absEverTriggered = false;
+        private bool _tcEverTriggered = false;
 
-        private double _maxDecel = 5.0;
-        public double MaxDecel
-        {
-            get => _maxDecel;
-            set { _maxDecel = value; OnPropertyChanged(); }
-        }
+        // ===================== Wheel speed property names =====================
 
-        private string _currentCarId = "N/A";
-        public string CurrentCarId
-        {
-            get => _currentCarId;
-            set { _currentCarId = value; OnPropertyChanged(); }
-        }
-
-        private string _shakeITAvailable = "Checking...";
-        public string ShakeITAvailable
-        {
-            get => _shakeITAvailable;
-            set { _shakeITAvailable = value; OnPropertyChanged(); }
-        }
-
-        // Sway Throttle values
-        private double _swayThrottleFL;
-        public double SwayThrottleFL
-        {
-            get => _swayThrottleFL;
-            set { _swayThrottleFL = value; OnPropertyChanged(); }
-        }
-
-        private double _swayThrottleFR;
-        public double SwayThrottleFR
-        {
-            get => _swayThrottleFR;
-            set { _swayThrottleFR = value; OnPropertyChanged(); }
-        }
-
-        private double _swayThrottleRL;
-        public double SwayThrottleRL
-        {
-            get => _swayThrottleRL;
-            set { _swayThrottleRL = value; OnPropertyChanged(); }
-        }
-
-        private double _swayThrottleRR;
-        public double SwayThrottleRR
-        {
-            get => _swayThrottleRR;
-            set { _swayThrottleRR = value; OnPropertyChanged(); }
-        }
-
-        // Surge Throttle values
-        private double _surgeThrottleFL;
-        public double SurgeThrottleFL
-        {
-            get => _surgeThrottleFL;
-            set { _surgeThrottleFL = value; OnPropertyChanged(); }
-        }
-
-        private double _surgeThrottleFR;
-        public double SurgeThrottleFR
-        {
-            get => _surgeThrottleFR;
-            set { _surgeThrottleFR = value; OnPropertyChanged(); }
-        }
-
-        private double _surgeThrottleRL;
-        public double SurgeThrottleRL
-        {
-            get => _surgeThrottleRL;
-            set { _surgeThrottleRL = value; OnPropertyChanged(); }
-        }
-
-        private double _surgeThrottleRR;
-        public double SurgeThrottleRR
-        {
-            get => _surgeThrottleRR;
-            set { _surgeThrottleRR = value; OnPropertyChanged(); }
-        }
-
-        // Slip Brake values
-        private double _slipBrakeFL;
-        public double SlipBrakeFL
-        {
-            get => _slipBrakeFL;
-            set { _slipBrakeFL = value; OnPropertyChanged(); }
-        }
-
-        private double _slipBrakeFR;
-        public double SlipBrakeFR
-        {
-            get => _slipBrakeFR;
-            set { _slipBrakeFR = value; OnPropertyChanged(); }
-        }
-
-        private double _slipBrakeRL;
-        public double SlipBrakeRL
-        {
-            get => _slipBrakeRL;
-            set { _slipBrakeRL = value; OnPropertyChanged(); }
-        }
-
-        private double _slipBrakeRR;
-        public double SlipBrakeRR
-        {
-            get => _slipBrakeRR;
-            set { _slipBrakeRR = value; OnPropertyChanged(); }
-        }
-
-        private double _absBrake;
-        public double ABSBrake
-        {
-            get => _absBrake;
-            set { _absBrake = value; OnPropertyChanged(); }
-        }
-
-        // ShakeIT Raw Slip values (for reference/fallback)
-        private double _shakeITSlipFL;
-        public double ShakeITSlipFL
-        {
-            get => _shakeITSlipFL;
-            set { _shakeITSlipFL = value; OnPropertyChanged(); }
-        }
-
-        private double _shakeITSlipFR;
-        public double ShakeITSlipFR
-        {
-            get => _shakeITSlipFR;
-            set { _shakeITSlipFR = value; OnPropertyChanged(); }
-        }
-
-        private double _shakeITSlipRL;
-        public double ShakeITSlipRL
-        {
-            get => _shakeITSlipRL;
-            set { _shakeITSlipRL = value; OnPropertyChanged(); }
-        }
-
-        private double _shakeITSlipRR;
-        public double ShakeITSlipRR
-        {
-            get => _shakeITSlipRR;
-            set { _shakeITSlipRR = value; OnPropertyChanged(); }
-        }
-
-        // Custom Slip output values
-        private double _customSlipFL;
-        public double CustomSlipFL
-        {
-            get => _customSlipFL;
-            set { _customSlipFL = value; OnPropertyChanged(); }
-        }
-
-        private double _customSlipFR;
-        public double CustomSlipFR
-        {
-            get => _customSlipFR;
-            set { _customSlipFR = value; OnPropertyChanged(); }
-        }
-
-        private double _customSlipRL;
-        public double CustomSlipRL
-        {
-            get => _customSlipRL;
-            set { _customSlipRL = value; OnPropertyChanged(); }
-        }
-
-        private double _customSlipRR;
-        public double CustomSlipRR
-        {
-            get => _customSlipRR;
-            set { _customSlipRR = value; OnPropertyChanged(); }
-        }
-
-        // Slip source indicator
-        private string _slipSource = "Detecting...";
-        public string SlipSource
-        {
-            get => _slipSource;
-            set { _slipSource = value; OnPropertyChanged(); }
-        }
-
-        // Per-wheel speed property names (iRacing format)
         private static readonly string[] wheelSpeedProps = { "LFspeed", "RFspeed", "LRspeed", "RRspeed" };
         private readonly string[] wheelNames = { "FrontLeft", "FrontRight", "RearLeft", "RearRight" };
+
+        // ===================== UI Bindable Properties =====================
+
+        // Max G values
+        private double _maxSway = 5.0;
+        public double MaxSway { get => _maxSway; set { _maxSway = value; OnPropertyChanged(); } }
+
+        private double _maxSurge = 5.0;
+        public double MaxSurge { get => _maxSurge; set { _maxSurge = value; OnPropertyChanged(); } }
+
+        private double _maxDecel = 5.0;
+        public double MaxDecel { get => _maxDecel; set { _maxDecel = value; OnPropertyChanged(); } }
+
+        // Status
+        private string _currentCarId = "N/A";
+        public string CurrentCarId { get => _currentCarId; set { _currentCarId = value; OnPropertyChanged(); } }
+
+        private string _shakeITAvailable = "Checking...";
+        public string ShakeITAvailable { get => _shakeITAvailable; set { _shakeITAvailable = value; OnPropertyChanged(); } }
+
+        private string _currentGame = "";
+        public string CurrentGame { get => _currentGame; set { _currentGame = value; OnPropertyChanged(); } }
+
+        private string _slipSource = "Detecting...";
+        public string SlipSource { get => _slipSource; set { _slipSource = value; OnPropertyChanged(); } }
+
+        private string _perWheelSupport = "Unknown";
+        public string PerWheelSupport { get => _perWheelSupport; set { _perWheelSupport = value; OnPropertyChanged(); } }
+
+        private string _detectionStatus = "";
+        public string DetectionStatus { get => _detectionStatus; set { _detectionStatus = value; OnPropertyChanged(); } }
+
+        private bool _isDetecting = false;
+        public bool IsDetecting { get => _isDetecting; set { _isDetecting = value; OnPropertyChanged(); } }
+
+        // Detection condition indicators
+        private string _detectSpeedCond = "";
+        public string DetectSpeedCond { get => _detectSpeedCond; set { _detectSpeedCond = value; OnPropertyChanged(); } }
+
+        private string _detectCornerCond = "";
+        public string DetectCornerCond { get => _detectCornerCond; set { _detectCornerCond = value; OnPropertyChanged(); } }
+
+        private string _detectBrakeCond = "";
+        public string DetectBrakeCond { get => _detectBrakeCond; set { _detectBrakeCond = value; OnPropertyChanged(); } }
+
+        // Sway Throttle values (4 corners)
+        private double _swayThrottleFL; public double SwayThrottleFL { get => _swayThrottleFL; set { _swayThrottleFL = value; OnPropertyChanged(); } }
+        private double _swayThrottleFR; public double SwayThrottleFR { get => _swayThrottleFR; set { _swayThrottleFR = value; OnPropertyChanged(); } }
+        private double _swayThrottleRL; public double SwayThrottleRL { get => _swayThrottleRL; set { _swayThrottleRL = value; OnPropertyChanged(); } }
+        private double _swayThrottleRR; public double SwayThrottleRR { get => _swayThrottleRR; set { _swayThrottleRR = value; OnPropertyChanged(); } }
+
+        // Surge Throttle values (4 corners)
+        private double _surgeThrottleFL; public double SurgeThrottleFL { get => _surgeThrottleFL; set { _surgeThrottleFL = value; OnPropertyChanged(); } }
+        private double _surgeThrottleFR; public double SurgeThrottleFR { get => _surgeThrottleFR; set { _surgeThrottleFR = value; OnPropertyChanged(); } }
+        private double _surgeThrottleRL; public double SurgeThrottleRL { get => _surgeThrottleRL; set { _surgeThrottleRL = value; OnPropertyChanged(); } }
+        private double _surgeThrottleRR; public double SurgeThrottleRR { get => _surgeThrottleRR; set { _surgeThrottleRR = value; OnPropertyChanged(); } }
+
+        // Slip Brake values (4 corners)
+        private double _slipBrakeFL; public double SlipBrakeFL { get => _slipBrakeFL; set { _slipBrakeFL = value; OnPropertyChanged(); } }
+        private double _slipBrakeFR; public double SlipBrakeFR { get => _slipBrakeFR; set { _slipBrakeFR = value; OnPropertyChanged(); } }
+        private double _slipBrakeRL; public double SlipBrakeRL { get => _slipBrakeRL; set { _slipBrakeRL = value; OnPropertyChanged(); } }
+        private double _slipBrakeRR; public double SlipBrakeRR { get => _slipBrakeRR; set { _slipBrakeRR = value; OnPropertyChanged(); } }
+
+        private double _absBrake; public double ABSBrake { get => _absBrake; set { _absBrake = value; OnPropertyChanged(); } }
+
+        // ShakeIT Raw Slip (reference)
+        private double _shakeITSlipFL; public double ShakeITSlipFL { get => _shakeITSlipFL; set { _shakeITSlipFL = value; OnPropertyChanged(); } }
+        private double _shakeITSlipFR; public double ShakeITSlipFR { get => _shakeITSlipFR; set { _shakeITSlipFR = value; OnPropertyChanged(); } }
+        private double _shakeITSlipRL; public double ShakeITSlipRL { get => _shakeITSlipRL; set { _shakeITSlipRL = value; OnPropertyChanged(); } }
+        private double _shakeITSlipRR; public double ShakeITSlipRR { get => _shakeITSlipRR; set { _shakeITSlipRR = value; OnPropertyChanged(); } }
+
+        // Custom Slip output
+        private double _customSlipFL; public double CustomSlipFL { get => _customSlipFL; set { _customSlipFL = value; OnPropertyChanged(); } }
+        private double _customSlipFR; public double CustomSlipFR { get => _customSlipFR; set { _customSlipFR = value; OnPropertyChanged(); } }
+        private double _customSlipRL; public double CustomSlipRL { get => _customSlipRL; set { _customSlipRL = value; OnPropertyChanged(); } }
+        private double _customSlipRR; public double CustomSlipRR { get => _customSlipRR; set { _customSlipRR = value; OnPropertyChanged(); } }
+
+        // Dual channel: WheelSlipTC (traction loss)
+        private string _slipTCMode = "Detecting...";
+        public string SlipTCMode { get => _slipTCMode; set { _slipTCMode = value; OnPropertyChanged(); } }
+        private double _wheelSlipTCFL; public double WheelSlipTCFL { get => _wheelSlipTCFL; set { _wheelSlipTCFL = value; OnPropertyChanged(); } }
+        private double _wheelSlipTCFR; public double WheelSlipTCFR { get => _wheelSlipTCFR; set { _wheelSlipTCFR = value; OnPropertyChanged(); } }
+        private double _wheelSlipTCRL; public double WheelSlipTCRL { get => _wheelSlipTCRL; set { _wheelSlipTCRL = value; OnPropertyChanged(); } }
+        private double _wheelSlipTCRR; public double WheelSlipTCRR { get => _wheelSlipTCRR; set { _wheelSlipTCRR = value; OnPropertyChanged(); } }
+
+        // Dual channel: WheelLockABS (wheel locking)
+        private string _lockABSMode = "Detecting...";
+        public string LockABSMode { get => _lockABSMode; set { _lockABSMode = value; OnPropertyChanged(); } }
+        private double _wheelLockABSFL; public double WheelLockABSFL { get => _wheelLockABSFL; set { _wheelLockABSFL = value; OnPropertyChanged(); } }
+        private double _wheelLockABSFR; public double WheelLockABSFR { get => _wheelLockABSFR; set { _wheelLockABSFR = value; OnPropertyChanged(); } }
+        private double _wheelLockABSRL; public double WheelLockABSRL { get => _wheelLockABSRL; set { _wheelLockABSRL = value; OnPropertyChanged(); } }
+        private double _wheelLockABSRR; public double WheelLockABSRR { get => _wheelLockABSRR; set { _wheelLockABSRR = value; OnPropertyChanged(); } }
+
+        // ===================== Public Methods =====================
+
+        public void RequestRetest()
+        {
+            _retestRequested = true;
+        }
 
         public void Init(PluginManager pluginManager)
         {
             SimHub.Logging.Current.Info("Starting SlipLock Plugin");
-
             this.PluginManager = pluginManager;
-
-            // Load settings
             Settings = this.ReadCommonSettings<SlipLockSettings>("GeneralSettings", () => new SlipLockSettings());
+            if (Settings.GameCapabilities == null)
+                Settings.GameCapabilities = new Dictionary<string, GameCapabilities>();
 
-            // Export SWAY * THROTTLE % MIXED HALF values
+            var t = this.GetType();
             foreach (string wheel in wheelNames)
             {
-                pluginManager.AddProperty(
-                    $"SlipLock.SwayThrottle.{wheel}",
-                    this.GetType(), 0.0);
+                pluginManager.AddProperty($"SlipLock.SwayThrottle.{wheel}", t, 0.0);
+                pluginManager.AddProperty($"SlipLock.SurgeThrottle.{wheel}", t, 0.0);
+                pluginManager.AddProperty($"SlipLock.SlipBrake.{wheel}", t, 0.0);
+                pluginManager.AddProperty($"SlipLock.CustomSlip.{wheel}", t, 0.0);
+                pluginManager.AddProperty($"SlipLock.WheelSlipTC.{wheel}", t, 0.0);
+                pluginManager.AddProperty($"SlipLock.WheelLockABS.{wheel}", t, 0.0);
             }
-
-            // Export SURGE * THROTTLE % MIXED HALF values
-            foreach (string wheel in wheelNames)
-            {
-                pluginManager.AddProperty(
-                    $"SlipLock.SurgeThrottle.{wheel}",
-                    this.GetType(), 0.0);
-            }
-
-            // Export SLIP * SURGE (BRAKES ONLY) values
-            foreach (string wheel in wheelNames)
-            {
-                pluginManager.AddProperty(
-                    $"SlipLock.SlipBrake.{wheel}",
-                    this.GetType(), 0.0);
-            }
-
-            // Export max values
-            pluginManager.AddProperty("SlipLock.MaxSway",
-                                     this.GetType(), 5.0);
-            pluginManager.AddProperty("SlipLock.MaxSurge",
-                                     this.GetType(), 5.0);
-            pluginManager.AddProperty("SlipLock.MaxDecel",
-                                     this.GetType(), 5.0);
-
-            // Export ABS * BRAKE %
-            pluginManager.AddProperty("SlipLock.ABSBrake",
-                                     this.GetType(), 0.0);
-
-            // Export Custom Slip values
-            foreach (string wheel in wheelNames)
-            {
-                pluginManager.AddProperty(
-                    $"SlipLock.CustomSlip.{wheel}",
-                    this.GetType(), 0.0);
-            }
+            pluginManager.AddProperty("SlipLock.MaxSway", t, 5.0);
+            pluginManager.AddProperty("SlipLock.MaxSurge", t, 5.0);
+            pluginManager.AddProperty("SlipLock.MaxDecel", t, 5.0);
+            pluginManager.AddProperty("SlipLock.ABSBrake", t, 0.0);
 
             SimHub.Logging.Current.Info("SlipLock Plugin initialized");
         }
@@ -302,8 +175,22 @@ namespace User.SlipLockPropertiesCalc
                 {
                     ShakeITAvailable = "Game not running";
                     SlipSource = "No game";
+                    IsDetecting = false;
                     return;
                 }
+
+                // Track game name for detection
+                string gameName = data.GameName ?? "";
+                if (gameName != _lastGameName)
+                {
+                    _lastGameName = gameName;
+                    _detectionState = SlipDetectionState.Loading;
+                    _dynamicFrameCount = 0;
+                    _absEverTriggered = false;
+                    _tcEverTriggered = false;
+                    SimHub.Logging.Current.Info($"SlipLock: Game changed to '{gameName}', reloading capabilities");
+                }
+                CurrentGame = gameName;
 
                 // Check if car changed - reset max values
                 string carId = data.NewData.CarId ?? "N/A";
@@ -313,121 +200,25 @@ namespace User.SlipLockPropertiesCalc
                     MaxSurge = 5.0;
                     MaxDecel = 5.0;
                     CurrentCarId = carId;
-                    SimHub.Logging.Current.Info($"Car changed to {carId}, reset max values");
                 }
 
-                // Get standard telemetry
                 double throttle = data.NewData.Throttle;
                 double brake = data.NewData.Brake;
                 double accelSway = data.NewData.AccelerationSway ?? 0;
                 double accelSurge = data.NewData.AccelerationSurge ?? 0;
 
-                // Update max values
                 UpdateMaxValues(pluginManager, accelSway, accelSurge);
 
-                // Try to get ShakeIT data
                 bool hasShakeIT = CheckShakeITAvailable(pluginManager);
                 ShakeITAvailable = hasShakeIT ? "Available" : "Not Found - Enable ShakeIT plugin!";
 
-                if (!hasShakeIT)
-                {
-                    return;
-                }
+                if (!hasShakeIT) return;
 
-                // Get ShakeIT max values (use ours as fallback)
-                double shakeITMaxSway = GetShakeITDouble(pluginManager,
-                    "ShakeITBSV3Plugin.Export.maxsway.All", MaxSway);
-                double shakeITMaxSurge = GetShakeITDouble(pluginManager,
-                    "ShakeITBSV3Plugin.Export.maxsurge.All", MaxSurge);
-                double shakeITMaxDecel = GetShakeITDouble(pluginManager,
-                    "ShakeITBSV3Plugin.Export.maxdecel.All", MaxDecel);
+                // ShakeIT-based effect calculations (unchanged)
+                CalculateEffects(pluginManager, data, throttle, brake, accelSway, accelSurge);
 
-                // Calculate each wheel
-                double[] swayThrottleValues = new double[4];
-                double[] surgeThrottleValues = new double[4];
-                double[] slipBrakeValues = new double[4];
-
-                for (int i = 0; i < 4; i++)
-                {
-                    string wheel = wheelNames[i];
-
-                    // Get ShakeIT values for this wheel
-                    double proxyL = GetShakeITDouble(pluginManager,
-                        $"ShakeITBSV3Plugin.Export.proxyL.{wheel}", 0);
-                    double wheelSlip = GetShakeITDouble(pluginManager,
-                        $"ShakeITBSV3Plugin.Export.WheelSlip.{wheel}", 0);
-
-                    // ===== SWAY * THROTTLE % MIXED HALF =====
-                    double slip = (proxyL / 50.0) * (wheelSlip * 8.0);
-                    double throttleNorm = throttle / 100.0;
-                    double sway = Math.Abs(accelSway) / Math.Max(shakeITMaxSway, 0.1);
-                    double multi = 0.2;
-
-                    double output_sway = sway * slip;
-                    double blend_sway = (output_sway * (1.0 - multi)) +
-                                       ((output_sway * throttleNorm) * multi);
-
-                    swayThrottleValues[i] = blend_sway;
-                    pluginManager.SetPropertyValue(
-                        $"SlipLock.SwayThrottle.{wheel}",
-                        this.GetType(), blend_sway);
-
-                    // ===== SURGE * THROTTLE % MIXED HALF =====
-                    double surge = (0.0 - accelSurge) / Math.Max(shakeITMaxSurge, 0.1);
-
-                    double output_surge = surge * slip;
-                    double blend_surge = (output_surge * (1.0 - multi)) +
-                                        ((output_surge * throttleNorm) * multi);
-
-                    surgeThrottleValues[i] = blend_surge;
-                    pluginManager.SetPropertyValue(
-                        $"SlipLock.SurgeThrottle.{wheel}",
-                        this.GetType(), blend_surge);
-
-                    // ===== SLIP * SURGE (BRAKES ONLY) =====
-                    double brakeNorm = brake / 100.0;
-                    double decel = accelSurge / Math.Max(shakeITMaxDecel, 0.1);
-                    double multi_brake = 0.2;
-
-                    double output_brake = slip * decel;
-                    double blend_brake = (output_brake * (1.0 - multi_brake)) +
-                                        ((output_brake * brakeNorm) * multi_brake);
-
-                    double slipBrake = blend_brake;
-
-                    slipBrakeValues[i] = slipBrake;
-                    pluginManager.SetPropertyValue(
-                        $"SlipLock.SlipBrake.{wheel}",
-                        this.GetType(), slipBrake);
-                }
-
-                // Update UI bindable properties
-                SwayThrottleFL = swayThrottleValues[0];
-                SwayThrottleFR = swayThrottleValues[1];
-                SwayThrottleRL = swayThrottleValues[2];
-                SwayThrottleRR = swayThrottleValues[3];
-
-                SurgeThrottleFL = surgeThrottleValues[0];
-                SurgeThrottleFR = surgeThrottleValues[1];
-                SurgeThrottleRL = surgeThrottleValues[2];
-                SurgeThrottleRR = surgeThrottleValues[3];
-
-                SlipBrakeFL = slipBrakeValues[0];
-                SlipBrakeFR = slipBrakeValues[1];
-                SlipBrakeRL = slipBrakeValues[2];
-                SlipBrakeRR = slipBrakeValues[3];
-
-                // ===== ABS * BRAKE % =====
-                bool absActive = data.NewData.ABSActive > 0;
-                double absBrake = absActive ? brake : 0.0;
-
-                ABSBrake = absBrake;
-                pluginManager.SetPropertyValue(
-                    "SlipLock.ABSBrake",
-                    this.GetType(), absBrake);
-
-                // ===== WHEEL SLIP (Input Adapter) =====
-                CalculateSlip(pluginManager, data);
+                // Wheel slip detection + dual channels
+                CalculateSlip(pluginManager, data, throttle, brake, accelSway);
             }
             catch (Exception ex)
             {
@@ -436,91 +227,297 @@ namespace User.SlipLockPropertiesCalc
             }
         }
 
-        /// <summary>
-        /// Input adapter for wheel slip: auto-detects per-wheel speeds, falls back to ShakeIT mono.
-        /// </summary>
-        private void CalculateSlip(PluginManager pluginManager, GameData data)
+        // ===================== Effect Calculations =====================
+
+        private void CalculateEffects(PluginManager pluginManager, GameData data,
+            double throttle, double brake, double accelSway, double accelSurge)
+        {
+            double shakeITMaxSway = GetDouble(pluginManager, "ShakeITBSV3Plugin.Export.maxsway.All", MaxSway);
+            double shakeITMaxSurge = GetDouble(pluginManager, "ShakeITBSV3Plugin.Export.maxsurge.All", MaxSurge);
+            double shakeITMaxDecel = GetDouble(pluginManager, "ShakeITBSV3Plugin.Export.maxdecel.All", MaxDecel);
+
+            double[] swayVals = new double[4], surgeVals = new double[4], brakeVals = new double[4];
+            var t = this.GetType();
+
+            for (int i = 0; i < 4; i++)
+            {
+                string wheel = wheelNames[i];
+                double proxyL = GetDouble(pluginManager, $"ShakeITBSV3Plugin.Export.proxyL.{wheel}", 0);
+                double wheelSlip = GetDouble(pluginManager, $"ShakeITBSV3Plugin.Export.WheelSlip.{wheel}", 0);
+
+                double slip = (proxyL / 50.0) * (wheelSlip * 8.0);
+                double throttleNorm = throttle / 100.0;
+                double multi = 0.2;
+
+                // Sway
+                double sway = Math.Abs(accelSway) / Math.Max(shakeITMaxSway, 0.1);
+                double outSway = sway * slip;
+                swayVals[i] = (outSway * (1.0 - multi)) + (outSway * throttleNorm * multi);
+                pluginManager.SetPropertyValue($"SlipLock.SwayThrottle.{wheel}", t, swayVals[i]);
+
+                // Surge
+                double surge = -accelSurge / Math.Max(shakeITMaxSurge, 0.1);
+                double outSurge = surge * slip;
+                surgeVals[i] = (outSurge * (1.0 - multi)) + (outSurge * throttleNorm * multi);
+                pluginManager.SetPropertyValue($"SlipLock.SurgeThrottle.{wheel}", t, surgeVals[i]);
+
+                // SlipBrake
+                double brakeNorm = brake / 100.0;
+                double decel = accelSurge / Math.Max(shakeITMaxDecel, 0.1);
+                double outBrake = slip * decel;
+                brakeVals[i] = (outBrake * (1.0 - multi)) + (outBrake * brakeNorm * multi);
+                pluginManager.SetPropertyValue($"SlipLock.SlipBrake.{wheel}", t, brakeVals[i]);
+            }
+
+            SwayThrottleFL = swayVals[0]; SwayThrottleFR = swayVals[1];
+            SwayThrottleRL = swayVals[2]; SwayThrottleRR = swayVals[3];
+            SurgeThrottleFL = surgeVals[0]; SurgeThrottleFR = surgeVals[1];
+            SurgeThrottleRL = surgeVals[2]; SurgeThrottleRR = surgeVals[3];
+            SlipBrakeFL = brakeVals[0]; SlipBrakeFR = brakeVals[1];
+            SlipBrakeRL = brakeVals[2]; SlipBrakeRR = brakeVals[3];
+
+            // ABS
+            bool absActive = data.NewData.ABSActive > 0;
+            double absBrake = absActive ? brake : 0.0;
+            ABSBrake = absBrake;
+            pluginManager.SetPropertyValue("SlipLock.ABSBrake", this.GetType(), absBrake);
+        }
+
+        // ===================== Slip Detection State Machine =====================
+
+        private void CalculateSlip(PluginManager pluginManager, GameData data,
+            double throttle, double brake, double accelSway)
         {
             try
             {
-                double vehicleSpeed = data.NewData.SpeedKmh / 3.6; // m/s
+                var t = this.GetType();
+                double vehicleSpeed = data.NewData.SpeedKmh / 3.6;
 
-                // Always read ShakeIT slip for reference
+                // Always read ShakeIT slip
                 double[] shakeITSlip = new double[4];
                 for (int i = 0; i < 4; i++)
-                {
-                    shakeITSlip[i] = GetShakeITDouble(pluginManager,
-                        $"ShakeITBSV3Plugin.Export.WheelSlip.{wheelNames[i]}", 0);
-                }
-                ShakeITSlipFL = shakeITSlip[0];
-                ShakeITSlipFR = shakeITSlip[1];
-                ShakeITSlipRL = shakeITSlip[2];
-                ShakeITSlipRR = shakeITSlip[3];
+                    shakeITSlip[i] = GetDouble(pluginManager, $"ShakeITBSV3Plugin.Export.WheelSlip.{wheelNames[i]}", 0);
+                ShakeITSlipFL = shakeITSlip[0]; ShakeITSlipFR = shakeITSlip[1];
+                ShakeITSlipRL = shakeITSlip[2]; ShakeITSlipRR = shakeITSlip[3];
 
-                // Try to read per-wheel speeds from game telemetry
+                // Handle retest request
+                if (_retestRequested)
+                {
+                    _retestRequested = false;
+                    _detectionState = SlipDetectionState.Detecting;
+                    _dynamicFrameCount = 0;
+                    _absEverTriggered = false;
+                    _tcEverTriggered = false;
+                    if (!string.IsNullOrEmpty(_lastGameName) && Settings.GameCapabilities.ContainsKey(_lastGameName))
+                        Settings.GameCapabilities.Remove(_lastGameName);
+                    SimHub.Logging.Current.Info($"SlipLock: Retest requested for '{_lastGameName}'");
+                }
+
+                // LOADING: check saved capabilities
+                if (_detectionState == SlipDetectionState.Loading)
+                {
+                    if (!string.IsNullOrEmpty(_lastGameName) && Settings.GameCapabilities.ContainsKey(_lastGameName))
+                    {
+                        var caps = Settings.GameCapabilities[_lastGameName];
+                        if (caps.WheelSpeedMode == "PerWheel")
+                            _detectionState = SlipDetectionState.UsePerWheel;
+                        else if (caps.WheelSpeedMode == "Mono")
+                            _detectionState = SlipDetectionState.UseMono;
+                        else
+                            _detectionState = SlipDetectionState.Detecting;
+
+                        _absEverTriggered = caps.ABSMode == "Available";
+                        _tcEverTriggered = caps.TCMode == "Available";
+                        SimHub.Logging.Current.Info($"SlipLock: Loaded capabilities for '{_lastGameName}': WheelSpeed={caps.WheelSpeedMode}, ABS={caps.ABSMode}, TC={caps.TCMode}");
+                    }
+                    else
+                    {
+                        _detectionState = SlipDetectionState.Detecting;
+                        _dynamicFrameCount = 0;
+                    }
+                }
+
+                // Read per-wheel speeds
                 double[] wheelSpeeds = new double[4];
                 bool hasWheelSpeeds = true;
                 for (int i = 0; i < 4; i++)
                 {
                     var val = pluginManager.GetPropertyValue(wheelSpeedProps[i]);
-                    if (val == null)
-                    {
-                        hasWheelSpeeds = false;
-                        break;
-                    }
+                    if (val == null) { hasWheelSpeeds = false; break; }
                     try { wheelSpeeds[i] = Convert.ToDouble(val); }
                     catch { hasWheelSpeeds = false; break; }
                 }
 
-                // Check if wheel speeds actually differ (at least 2 distinct values)
-                bool wheelSpeedsDiffer = false;
-                if (hasWheelSpeeds && vehicleSpeed > 1.0)
+                double[] slipValues = new double[4];
+
+                // DETECTING state
+                if (_detectionState == SlipDetectionState.Detecting)
                 {
-                    for (int i = 1; i < 4; i++)
+                    IsDetecting = true;
+
+                    bool speedOk = vehicleSpeed > 5.0;
+                    bool cornerOk = Math.Abs(accelSway) > 0.3;
+                    bool brakeOk = brake > 10;
+                    bool dynamicOk = speedOk && (cornerOk || brakeOk);
+
+                    DetectSpeedCond = speedOk ? $"OK {vehicleSpeed:F1} m/s" : $"-- {vehicleSpeed:F1} m/s";
+                    DetectCornerCond = cornerOk ? $"OK {Math.Abs(accelSway):F2}G" : $"-- {Math.Abs(accelSway):F2}G";
+                    DetectBrakeCond = brakeOk ? $"OK {brake:F0}%" : $"-- {brake:F0}%";
+
+                    if (!hasWheelSpeeds)
                     {
-                        if (Math.Abs(wheelSpeeds[i] - wheelSpeeds[0]) > 0.01)
+                        // No wheel speed properties at all
+                        SaveCapabilities("Mono");
+                        _detectionState = SlipDetectionState.UseMono;
+                        DetectionStatus = "No wheel speed data found";
+                        SimHub.Logging.Current.Info($"SlipLock: '{_lastGameName}' detected as Mono (no wheel speed properties)");
+                    }
+                    else if (dynamicOk)
+                    {
+                        // Check if any wheel speeds differ
+                        bool differ = false;
+                        for (int i = 1; i < 4; i++)
                         {
-                            wheelSpeedsDiffer = true;
-                            break;
+                            if (Math.Abs(wheelSpeeds[i] - wheelSpeeds[0]) > 0.05)
+                            { differ = true; break; }
                         }
+
+                        if (differ)
+                        {
+                            SaveCapabilities("PerWheel");
+                            _detectionState = SlipDetectionState.UsePerWheel;
+                            DetectionStatus = "Per-wheel speeds detected!";
+                            SimHub.Logging.Current.Info($"SlipLock: '{_lastGameName}' detected as PerWheel");
+                        }
+                        else
+                        {
+                            _dynamicFrameCount++;
+                            DetectionStatus = $"Testing... ({_dynamicFrameCount}/{DetectionFrames} frames)";
+
+                            if (_dynamicFrameCount >= DetectionFrames)
+                            {
+                                SaveCapabilities("Mono");
+                                _detectionState = SlipDetectionState.UseMono;
+                                DetectionStatus = "Wheel speeds identical under load";
+                                SimHub.Logging.Current.Info($"SlipLock: '{_lastGameName}' detected as Mono (identical after {DetectionFrames} frames)");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        DetectionStatus = "Waiting for conditions... (drive and corner/brake)";
+                    }
+
+                    // During detection, use ShakeIT as interim
+                    for (int i = 0; i < 4; i++) slipValues[i] = shakeITSlip[i];
+                    SlipSource = "ShakeIT (detecting...)";
+                    PerWheelSupport = "Detecting...";
+                }
+
+                // USE_PERWHEEL state
+                if (_detectionState == SlipDetectionState.UsePerWheel)
+                {
+                    IsDetecting = false;
+                    PerWheelSupport = "Per-Wheel";
+                    SlipSource = "Per-Wheel Speeds (direct)";
+
+                    if (hasWheelSpeeds && vehicleSpeed > 1.0)
+                    {
+                        for (int i = 0; i < 4; i++)
+                        {
+                            slipValues[i] = ((wheelSpeeds[i] - vehicleSpeed) / vehicleSpeed) * 100.0;
+                            slipValues[i] = Math.Max(-100.0, Math.Min(100.0, slipValues[i]));
+                        }
+                    }
+                    else
+                    {
+                        for (int i = 0; i < 4; i++) slipValues[i] = shakeITSlip[i];
                     }
                 }
 
-                double[] slipValues = new double[4];
-
-                if (hasWheelSpeeds && wheelSpeedsDiffer && vehicleSpeed > 1.0)
+                // USE_MONO state
+                if (_detectionState == SlipDetectionState.UseMono)
                 {
-                    // Direct per-wheel slip from wheel speed vs vehicle speed
-                    SlipSource = "Per-Wheel Speeds (direct)";
-                    for (int i = 0; i < 4; i++)
+                    IsDetecting = false;
+                    PerWheelSupport = "Mono";
+                    SlipSource = "ShakeIT (mono)";
+                    for (int i = 0; i < 4; i++) slipValues[i] = shakeITSlip[i];
+                }
+
+                // Update CustomSlip
+                CustomSlipFL = slipValues[0]; CustomSlipFR = slipValues[1];
+                CustomSlipRL = slipValues[2]; CustomSlipRR = slipValues[3];
+                for (int i = 0; i < 4; i++)
+                    pluginManager.SetPropertyValue($"SlipLock.CustomSlip.{wheelNames[i]}", t, slipValues[i]);
+
+                // ===================== Dual Channels =====================
+
+                // Track ABS/TC availability
+                bool absActive = data.NewData.ABSActive > 0;
+                bool tcActive = data.NewData.TCActive > 0;
+                if (absActive) _absEverTriggered = true;
+                if (tcActive) _tcEverTriggered = true;
+
+                // Save TC/ABS detection to capabilities
+                if (!string.IsNullOrEmpty(_lastGameName) && Settings.GameCapabilities.ContainsKey(_lastGameName))
+                {
+                    var caps = Settings.GameCapabilities[_lastGameName];
+                    if (_absEverTriggered && caps.ABSMode != "Available")
                     {
-                        slipValues[i] = ((wheelSpeeds[i] - vehicleSpeed) / vehicleSpeed) * 100.0;
-                        slipValues[i] = Math.Max(-100.0, Math.Min(100.0, slipValues[i]));
+                        caps.ABSMode = "Available";
+                        SimHub.Logging.Current.Info($"SlipLock: ABS detected for '{_lastGameName}'");
                     }
+                    if (_tcEverTriggered && caps.TCMode != "Available")
+                    {
+                        caps.TCMode = "Available";
+                        SimHub.Logging.Current.Info($"SlipLock: TC detected for '{_lastGameName}'");
+                    }
+                }
+
+                double brakeNorm = brake / 100.0;
+                double[] slipTC = new double[4];
+                double[] lockABS = new double[4];
+
+                // Channel 1: WheelSlipTC
+                if (_tcEverTriggered && tcActive)
+                {
+                    SlipTCMode = "TC";
+                    // TC active: use slip values as TC intensity indicator
+                    for (int i = 0; i < 4; i++)
+                        slipTC[i] = Math.Max(0, slipValues[i]); // positive slip = wheelspin
                 }
                 else
                 {
-                    // Fall back to ShakeIT mono slip
-                    SlipSource = hasWheelSpeeds ? "ShakeIT (mono - wheel speeds identical)" : "ShakeIT (mono)";
+                    SlipTCMode = _tcEverTriggered ? "Slip (TC off)" : "Slip (no TC)";
                     for (int i = 0; i < 4; i++)
-                    {
-                        slipValues[i] = shakeITSlip[i];
-                    }
+                        slipTC[i] = Math.Max(0, slipValues[i]);
                 }
 
-                // Update UI
-                CustomSlipFL = slipValues[0];
-                CustomSlipFR = slipValues[1];
-                CustomSlipRL = slipValues[2];
-                CustomSlipRR = slipValues[3];
-
-                // Export to SimHub
+                WheelSlipTCFL = slipTC[0]; WheelSlipTCFR = slipTC[1];
+                WheelSlipTCRL = slipTC[2]; WheelSlipTCRR = slipTC[3];
                 for (int i = 0; i < 4; i++)
+                    pluginManager.SetPropertyValue($"SlipLock.WheelSlipTC.{wheelNames[i]}", t, slipTC[i]);
+
+                // Channel 2: WheelLockABS
+                if (_absEverTriggered && absActive)
                 {
-                    pluginManager.SetPropertyValue(
-                        $"SlipLock.CustomSlip.{wheelNames[i]}",
-                        this.GetType(), slipValues[i]);
+                    LockABSMode = "ABS";
+                    // ABS active: brake intensity as lock indicator
+                    for (int i = 0; i < 4; i++)
+                        lockABS[i] = brake;
                 }
+                else
+                {
+                    LockABSMode = _absEverTriggered ? "Lock (ABS off)" : "Lock (no ABS)";
+                    // Brake-weighted negative slip
+                    for (int i = 0; i < 4; i++)
+                        lockABS[i] = Math.Abs(Math.Min(0, slipValues[i])) * brakeNorm;
+                }
+
+                WheelLockABSFL = lockABS[0]; WheelLockABSFR = lockABS[1];
+                WheelLockABSRL = lockABS[2]; WheelLockABSRR = lockABS[3];
+                for (int i = 0; i < 4; i++)
+                    pluginManager.SetPropertyValue($"SlipLock.WheelLockABS.{wheelNames[i]}", t, lockABS[i]);
             }
             catch (Exception ex)
             {
@@ -529,86 +526,55 @@ namespace User.SlipLockPropertiesCalc
             }
         }
 
-        private bool CheckShakeITAvailable(PluginManager pluginManager)
+        // ===================== Helpers =====================
+
+        private void SaveCapabilities(string wheelSpeedMode)
         {
-            var testProp = pluginManager.GetPropertyValue(
-                "ShakeITBSV3Plugin.Export.WheelSlip.FrontLeft");
-            return testProp != null;
+            if (string.IsNullOrEmpty(_lastGameName)) return;
+            if (!Settings.GameCapabilities.ContainsKey(_lastGameName))
+                Settings.GameCapabilities[_lastGameName] = new GameCapabilities();
+            Settings.GameCapabilities[_lastGameName].WheelSpeedMode = wheelSpeedMode;
+            this.SaveCommonSettings("GeneralSettings", Settings);
         }
 
-        private double GetShakeITDouble(PluginManager pluginManager,
-                                        string propertyName,
-                                        double defaultValue)
+        private bool CheckShakeITAvailable(PluginManager pm)
         {
-            var value = pluginManager.GetPropertyValue(propertyName);
-            if (value == null) return defaultValue;
-
-            try
-            {
-                return Convert.ToDouble(value);
-            }
-            catch
-            {
-                return defaultValue;
-            }
+            return pm.GetPropertyValue("ShakeITBSV3Plugin.Export.WheelSlip.FrontLeft") != null;
         }
 
-        private void UpdateMaxValues(PluginManager pluginManager,
-                                     double accelSway,
-                                     double accelSurge)
+        private double GetDouble(PluginManager pm, string prop, double fallback)
         {
-            // Update MaxSway
+            var val = pm.GetPropertyValue(prop);
+            if (val == null) return fallback;
+            try { return Convert.ToDouble(val); }
+            catch { return fallback; }
+        }
+
+        private void UpdateMaxValues(PluginManager pm, double accelSway, double accelSurge)
+        {
             double sway = Math.Abs(accelSway);
-            if (sway < MaxSway + 5.0)
-            {
-                if (MaxSway <= sway)
-                {
-                    MaxSway = sway;
-                }
-            }
+            if (sway < MaxSway + 5.0 && MaxSway <= sway) MaxSway = sway;
 
-            // Update MaxSurge
-            double surge = accelSurge;
-            if (surge < MaxSurge + 5.0)
-            {
-                if (surge > MaxSurge || Math.Abs(surge - MaxSurge) < 0.001)
-                {
-                    MaxSurge = surge;
-                }
-            }
+            if (accelSurge < MaxSurge + 5.0 && (accelSurge > MaxSurge || Math.Abs(accelSurge - MaxSurge) < 0.001))
+                MaxSurge = accelSurge;
 
-            // Update MaxDecel
-            double decel = accelSurge;
-            if (decel < MaxDecel + 5.0)
-            {
-                if (decel <= MaxDecel || Math.Abs(decel - MaxDecel) < 0.001)
-                {
-                    MaxDecel = decel;
-                }
-            }
+            if (accelSurge < MaxDecel + 5.0 && (accelSurge <= MaxDecel || Math.Abs(accelSurge - MaxDecel) < 0.001))
+                MaxDecel = accelSurge;
 
-            // Export to SimHub
-            pluginManager.SetPropertyValue("SlipLock.MaxSway",
-                                          this.GetType(), MaxSway);
-            pluginManager.SetPropertyValue("SlipLock.MaxSurge",
-                                          this.GetType(), MaxSurge);
-            pluginManager.SetPropertyValue("SlipLock.MaxDecel",
-                                          this.GetType(), MaxDecel);
+            var t = this.GetType();
+            pm.SetPropertyValue("SlipLock.MaxSway", t, MaxSway);
+            pm.SetPropertyValue("SlipLock.MaxSurge", t, MaxSurge);
+            pm.SetPropertyValue("SlipLock.MaxDecel", t, MaxDecel);
         }
 
         public void End(PluginManager pluginManager)
         {
-            // Save settings
             this.SaveCommonSettings("GeneralSettings", Settings);
             SimHub.Logging.Current.Info("SlipLock Plugin stopped");
         }
 
-        /// <summary>
-        /// Returns the settings control for the plugin
-        /// </summary>
         public Control GetWPFSettingsControl(PluginManager pluginManager)
         {
-            SimHub.Logging.Current.Info("SlipLock GetWPFSettingsControl called");
             return new SettingsControl(this);
         }
     }

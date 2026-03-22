@@ -1,4 +1,5 @@
-﻿using System.Windows.Controls;
+using System.Windows;
+using System.Windows.Controls;
 
 namespace User.SlipLockPropertiesCalc
 {
@@ -15,6 +16,11 @@ namespace User.SlipLockPropertiesCalc
         {
             this.Plugin = plugin;
             this.DataContext = plugin;
+        }
+
+        private void RetestButton_Click(object sender, RoutedEventArgs e)
+        {
+            Plugin.RequestRetest();
         }
     }
 }

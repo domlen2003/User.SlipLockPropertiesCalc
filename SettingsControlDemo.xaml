@@ -1,34 +1,201 @@
-﻿<UserControl x:Class="User.SlipLockPropertiesCalc.SettingsControl"
+<UserControl x:Class="User.SlipLockPropertiesCalc.SettingsControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:styles="clr-namespace:SimHub.Plugins.Styles;assembly=SimHub.Plugins"
              mc:Ignorable="d">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
     <ScrollViewer>
         <Grid>
             <styles:SHSection Title="SLIP LOCK PROPERTIES CALC - REAL-TIME VALUES" ShowSeparator="True">
                 <StackPanel>
 
-                    <!-- Max Values Section -->
-                    <styles:SHSubSection Title="Maximum G-Force Values (Session)">
+                    <!-- ==================== PRIMARY OUTPUTS: DUAL CHANNELS ==================== -->
+                    <styles:SHSubSection Title="PRIMARY OUTPUTS">
                         <Grid Margin="10">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="200"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="20"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="30"/>
-                                <RowDefinition Height="30"/>
-                                <RowDefinition Height="30"/>
-                            </Grid.RowDefinitions>
 
+                            <!-- LEFT: Wheel Slip / TC -->
+                            <StackPanel Grid.Column="0">
+                                <Label Content="WHEEL SLIP / TC" HorizontalAlignment="Center" FontWeight="Bold" FontSize="16" Margin="0,0,0,2"/>
+                                <Label Content="{Binding SlipTCMode}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="12" FontWeight="Bold" Margin="0,0,0,5"/>
+                                <Grid HorizontalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="120"/><ColumnDefinition Width="40"/><ColumnDefinition Width="120"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/><RowDefinition Height="80"/><RowDefinition Height="30"/>
+                                        <RowDefinition Height="30"/><RowDefinition Height="80"/><RowDefinition Height="30"/>
+                                    </Grid.RowDefinitions>
+                                    <Label Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Content="FRONT" HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,0,0,5"/>
+                                    <Grid Grid.Row="1" Grid.Column="0">
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding WheelSlipTCFL}"/>
+                                        <Label Content="{Binding WheelSlipTCFL, StringFormat='{}{0:F1}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Label Grid.Row="2" Grid.Column="0" Content="FL" HorizontalAlignment="Center" FontWeight="Bold"/>
+                                    <Grid Grid.Row="1" Grid.Column="2">
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding WheelSlipTCFR}"/>
+                                        <Label Content="{Binding WheelSlipTCFR, StringFormat='{}{0:F1}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Label Grid.Row="2" Grid.Column="2" Content="FR" HorizontalAlignment="Center" FontWeight="Bold"/>
+                                    <Label Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Content="REAR" HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,20,0,5"/>
+                                    <Grid Grid.Row="4" Grid.Column="0">
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding WheelSlipTCRL}"/>
+                                        <Label Content="{Binding WheelSlipTCRL, StringFormat='{}{0:F1}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Label Grid.Row="5" Grid.Column="0" Content="RL" HorizontalAlignment="Center" FontWeight="Bold"/>
+                                    <Grid Grid.Row="4" Grid.Column="2">
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding WheelSlipTCRR}"/>
+                                        <Label Content="{Binding WheelSlipTCRR, StringFormat='{}{0:F1}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Label Grid.Row="5" Grid.Column="2" Content="RR" HorizontalAlignment="Center" FontWeight="Bold"/>
+                                </Grid>
+                            </StackPanel>
+
+                            <Border Grid.Column="1" Width="2" Background="Gray" Margin="9,0"/>
+
+                            <!-- RIGHT: Wheel Lock / ABS -->
+                            <StackPanel Grid.Column="2">
+                                <Label Content="WHEEL LOCK / ABS" HorizontalAlignment="Center" FontWeight="Bold" FontSize="16" Margin="0,0,0,2"/>
+                                <Label Content="{Binding LockABSMode}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="12" FontWeight="Bold" Margin="0,0,0,5"/>
+                                <Grid HorizontalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="120"/><ColumnDefinition Width="40"/><ColumnDefinition Width="120"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/><RowDefinition Height="80"/><RowDefinition Height="30"/>
+                                        <RowDefinition Height="30"/><RowDefinition Height="80"/><RowDefinition Height="30"/>
+                                    </Grid.RowDefinitions>
+                                    <Label Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Content="FRONT" HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,0,0,5"/>
+                                    <Grid Grid.Row="1" Grid.Column="0">
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding WheelLockABSFL}"/>
+                                        <Label Content="{Binding WheelLockABSFL, StringFormat='{}{0:F1}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Label Grid.Row="2" Grid.Column="0" Content="FL" HorizontalAlignment="Center" FontWeight="Bold"/>
+                                    <Grid Grid.Row="1" Grid.Column="2">
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding WheelLockABSFR}"/>
+                                        <Label Content="{Binding WheelLockABSFR, StringFormat='{}{0:F1}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Label Grid.Row="2" Grid.Column="2" Content="FR" HorizontalAlignment="Center" FontWeight="Bold"/>
+                                    <Label Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Content="REAR" HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,20,0,5"/>
+                                    <Grid Grid.Row="4" Grid.Column="0">
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding WheelLockABSRL}"/>
+                                        <Label Content="{Binding WheelLockABSRL, StringFormat='{}{0:F1}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Label Grid.Row="5" Grid.Column="0" Content="RL" HorizontalAlignment="Center" FontWeight="Bold"/>
+                                    <Grid Grid.Row="4" Grid.Column="2">
+                                        <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding WheelLockABSRR}"/>
+                                        <Label Content="{Binding WheelLockABSRR, StringFormat='{}{0:F1}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Label Grid.Row="5" Grid.Column="2" Content="RR" HorizontalAlignment="Center" FontWeight="Bold"/>
+                                </Grid>
+                            </StackPanel>
+                        </Grid>
+                    </styles:SHSubSection>
+
+                    <styles:SHSectionSeparator />
+
+                    <!-- ==================== WHEEL SLIP DETECTION ==================== -->
+                    <styles:SHSubSection Title="WHEEL SLIP DETECTION">
+                        <StackPanel Margin="10">
+                            <!-- Game + Detection Status -->
+                            <Grid Margin="0,0,0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="130"/><ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="130"/><ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="30"/><RowDefinition Height="30"/>
+                                </Grid.RowDefinitions>
+                                <Label Grid.Row="0" Grid.Column="0" FontWeight="Bold">Current Game:</Label>
+                                <Label Grid.Row="0" Grid.Column="1" Content="{Binding CurrentGame}" FontFamily="Consolas" FontSize="14"/>
+                                <Label Grid.Row="0" Grid.Column="2" FontWeight="Bold">Per-Wheel:</Label>
+                                <Label Grid.Row="0" Grid.Column="3" Content="{Binding PerWheelSupport}" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+                                <Label Grid.Row="1" Grid.Column="0" FontWeight="Bold">Slip Source:</Label>
+                                <Label Grid.Row="1" Grid.Column="1" Content="{Binding SlipSource}" FontFamily="Consolas" FontSize="14"/>
+                                <Label Grid.Row="1" Grid.Column="2" FontWeight="Bold"/>
+                                <Button Grid.Row="1" Grid.Column="3" Content="Retest Detection" Click="RetestButton_Click"
+                                        HorizontalAlignment="Left" Padding="10,3" Margin="0,3"/>
+                            </Grid>
+
+                            <!-- Detection Conditions (visible only during detection) -->
+                            <StackPanel Visibility="{Binding IsDetecting, Converter={StaticResource BoolToVis}}" Margin="0,5,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150"/><ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="150"/><ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/><RowDefinition Height="30"/>
+                                    </Grid.RowDefinitions>
+                                    <Label Grid.Row="0" Grid.Column="0" Content="Speed (>18 km/h)" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                                    <Label Grid.Row="1" Grid.Column="0" Content="{Binding DetectSpeedCond}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+                                    <Label Grid.Row="0" Grid.Column="1" Content="Cornering (>0.3G)" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                                    <Label Grid.Row="1" Grid.Column="1" Content="{Binding DetectCornerCond}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+                                    <Label Grid.Row="0" Grid.Column="2" Content="Braking (>10%)" HorizontalAlignment="Center" FontWeight="Bold" FontSize="11"/>
+                                    <Label Grid.Row="1" Grid.Column="2" Content="{Binding DetectBrakeCond}" HorizontalAlignment="Center" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
+                                    <Label Grid.Row="0" Grid.Column="3" Grid.RowSpan="2" Content="{Binding DetectionStatus}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" FontSize="14"/>
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+                    </styles:SHSubSection>
+
+                    <styles:SHSectionSeparator />
+
+                    <!-- ==================== CUSTOM SLIP (4-CORNER) ==================== -->
+                    <styles:SHSubSection Title="CUSTOM SLIP">
+                        <Grid Margin="20,10,20,10" HorizontalAlignment="Center">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="120"/><ColumnDefinition Width="40"/><ColumnDefinition Width="120"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/><RowDefinition Height="80"/><RowDefinition Height="30"/>
+                                <RowDefinition Height="30"/><RowDefinition Height="80"/><RowDefinition Height="30"/>
+                            </Grid.RowDefinitions>
+                            <Label Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Content="FRONT" HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,0,0,5"/>
+                            <Grid Grid.Row="1" Grid.Column="0">
+                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding CustomSlipFL}"/>
+                                <Label Content="{Binding CustomSlipFL, StringFormat='{}{0:F1}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                            <Label Grid.Row="2" Grid.Column="0" Content="Front Left" HorizontalAlignment="Center" FontWeight="Bold"/>
+                            <Grid Grid.Row="1" Grid.Column="2">
+                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding CustomSlipFR}"/>
+                                <Label Content="{Binding CustomSlipFR, StringFormat='{}{0:F1}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                            <Label Grid.Row="2" Grid.Column="2" Content="Front Right" HorizontalAlignment="Center" FontWeight="Bold"/>
+                            <Label Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Content="REAR" HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,20,0,5"/>
+                            <Grid Grid.Row="4" Grid.Column="0">
+                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding CustomSlipRL}"/>
+                                <Label Content="{Binding CustomSlipRL, StringFormat='{}{0:F1}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                            <Label Grid.Row="5" Grid.Column="0" Content="Rear Left" HorizontalAlignment="Center" FontWeight="Bold"/>
+                            <Grid Grid.Row="4" Grid.Column="2">
+                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding CustomSlipRR}"/>
+                                <Label Content="{Binding CustomSlipRR, StringFormat='{}{0:F1}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                            <Label Grid.Row="5" Grid.Column="2" Content="Rear Right" HorizontalAlignment="Center" FontWeight="Bold"/>
+                        </Grid>
+                    </styles:SHSubSection>
+
+                    <styles:SHSectionSeparator />
+
+                    <!-- ==================== Max Values ==================== -->
+                    <styles:SHSubSection Title="Maximum G-Force Values (Session)">
+                        <Grid Margin="10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="200"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition Height="30"/><RowDefinition Height="30"/></Grid.RowDefinitions>
                             <Label Grid.Row="0" Grid.Column="0" FontWeight="Bold">Max Sway (Lateral G):</Label>
                             <Label Grid.Row="0" Grid.Column="1" Content="{Binding MaxSway, StringFormat='{}{0:F3} G'}" FontFamily="Consolas" FontSize="14"/>
-
                             <Label Grid.Row="1" Grid.Column="0" FontWeight="Bold">Max Surge (Accel G):</Label>
                             <Label Grid.Row="1" Grid.Column="1" Content="{Binding MaxSurge, StringFormat='{}{0:F3} G'}" FontFamily="Consolas" FontSize="14"/>
-
                             <Label Grid.Row="2" Grid.Column="0" FontWeight="Bold">Max Decel (Brake G):</Label>
                             <Label Grid.Row="2" Grid.Column="1" Content="{Binding MaxDecel, StringFormat='{}{0:F3} G'}" FontFamily="Consolas" FontSize="14"/>
                         </Grid>
@@ -36,302 +203,97 @@
 
                     <styles:SHSectionSeparator />
 
-                    <!-- SWAY * THROTTLE Section -->
+                    <!-- ==================== SWAY * THROTTLE ==================== -->
                     <styles:SHSubSection Title="SWAY * THROTTLE % MIXED HALF">
                         <Grid Margin="20,10,20,10" HorizontalAlignment="Center">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="40"/>
-                                <ColumnDefinition Width="120"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="80"/>
-                                <RowDefinition Height="30"/>
-                                <RowDefinition Height="30"/>
-                                <RowDefinition Height="80"/>
-                                <RowDefinition Height="30"/>
-                            </Grid.RowDefinitions>
-
-                            <!-- Front Row Label -->
-                            <Label Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Content="FRONT" 
-                                   HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,0,0,5"/>
-
-                            <!-- Front Left -->
-                            <Grid Grid.Row="1" Grid.Column="0">
-                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SwayThrottleFL}" />
-                                <Label Content="{Binding SwayThrottleFL, StringFormat='{}{0:F3}'}" 
-                                       FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="40"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="80"/><RowDefinition Height="30"/><RowDefinition Height="30"/><RowDefinition Height="80"/><RowDefinition Height="30"/></Grid.RowDefinitions>
+                            <Label Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Content="FRONT" HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,0,0,5"/>
+                            <Grid Grid.Row="1" Grid.Column="0"><ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SwayThrottleFL}"/><Label Content="{Binding SwayThrottleFL, StringFormat='{}{0:F3}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
                             <Label Grid.Row="2" Grid.Column="0" Content="Front Left" HorizontalAlignment="Center" FontWeight="Bold"/>
-
-                            <!-- Front Right -->
-                            <Grid Grid.Row="1" Grid.Column="2">
-                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SwayThrottleFR}" />
-                                <Label Content="{Binding SwayThrottleFR, StringFormat='{}{0:F3}'}" 
-                                       FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
+                            <Grid Grid.Row="1" Grid.Column="2"><ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SwayThrottleFR}"/><Label Content="{Binding SwayThrottleFR, StringFormat='{}{0:F3}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
                             <Label Grid.Row="2" Grid.Column="2" Content="Front Right" HorizontalAlignment="Center" FontWeight="Bold"/>
-
-                            <!-- Rear Row Label -->
-                            <Label Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Content="REAR" 
-                                   HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,20,0,5"/>
-
-                            <!-- Rear Left -->
-                            <Grid Grid.Row="4" Grid.Column="0">
-                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SwayThrottleRL}" />
-                                <Label Content="{Binding SwayThrottleRL, StringFormat='{}{0:F3}'}" 
-                                       FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
+                            <Label Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Content="REAR" HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,20,0,5"/>
+                            <Grid Grid.Row="4" Grid.Column="0"><ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SwayThrottleRL}"/><Label Content="{Binding SwayThrottleRL, StringFormat='{}{0:F3}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
                             <Label Grid.Row="5" Grid.Column="0" Content="Rear Left" HorizontalAlignment="Center" FontWeight="Bold"/>
-
-                            <!-- Rear Right -->
-                            <Grid Grid.Row="4" Grid.Column="2">
-                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SwayThrottleRR}" />
-                                <Label Content="{Binding SwayThrottleRR, StringFormat='{}{0:F3}'}" 
-                                       FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
+                            <Grid Grid.Row="4" Grid.Column="2"><ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SwayThrottleRR}"/><Label Content="{Binding SwayThrottleRR, StringFormat='{}{0:F3}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
                             <Label Grid.Row="5" Grid.Column="2" Content="Rear Right" HorizontalAlignment="Center" FontWeight="Bold"/>
                         </Grid>
                     </styles:SHSubSection>
 
                     <styles:SHSectionSeparator />
 
-                    <!-- SURGE * THROTTLE Section -->
+                    <!-- ==================== SURGE * THROTTLE ==================== -->
                     <styles:SHSubSection Title="SURGE * THROTTLE % MIXED HALF">
                         <Grid Margin="20,10,20,10" HorizontalAlignment="Center">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="40"/>
-                                <ColumnDefinition Width="120"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="80"/>
-                                <RowDefinition Height="30"/>
-                                <RowDefinition Height="30"/>
-                                <RowDefinition Height="80"/>
-                                <RowDefinition Height="30"/>
-                            </Grid.RowDefinitions>
-
-                            <!-- Front Row Label -->
-                            <Label Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Content="FRONT" 
-                                   HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,0,0,5"/>
-
-                            <!-- Front Left -->
-                            <Grid Grid.Row="1" Grid.Column="0">
-                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SurgeThrottleFL}" />
-                                <Label Content="{Binding SurgeThrottleFL, StringFormat='{}{0:F3}'}" 
-                                       FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="40"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="80"/><RowDefinition Height="30"/><RowDefinition Height="30"/><RowDefinition Height="80"/><RowDefinition Height="30"/></Grid.RowDefinitions>
+                            <Label Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Content="FRONT" HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,0,0,5"/>
+                            <Grid Grid.Row="1" Grid.Column="0"><ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SurgeThrottleFL}"/><Label Content="{Binding SurgeThrottleFL, StringFormat='{}{0:F3}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
                             <Label Grid.Row="2" Grid.Column="0" Content="Front Left" HorizontalAlignment="Center" FontWeight="Bold"/>
-
-                            <!-- Front Right -->
-                            <Grid Grid.Row="1" Grid.Column="2">
-                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SurgeThrottleFR}" />
-                                <Label Content="{Binding SurgeThrottleFR, StringFormat='{}{0:F3}'}" 
-                                       FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
+                            <Grid Grid.Row="1" Grid.Column="2"><ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SurgeThrottleFR}"/><Label Content="{Binding SurgeThrottleFR, StringFormat='{}{0:F3}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
                             <Label Grid.Row="2" Grid.Column="2" Content="Front Right" HorizontalAlignment="Center" FontWeight="Bold"/>
-
-                            <!-- Rear Row Label -->
-                            <Label Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Content="REAR" 
-                                   HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,20,0,5"/>
-
-                            <!-- Rear Left -->
-                            <Grid Grid.Row="4" Grid.Column="0">
-                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SurgeThrottleRL}" />
-                                <Label Content="{Binding SurgeThrottleRL, StringFormat='{}{0:F3}'}" 
-                                       FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
+                            <Label Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Content="REAR" HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,20,0,5"/>
+                            <Grid Grid.Row="4" Grid.Column="0"><ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SurgeThrottleRL}"/><Label Content="{Binding SurgeThrottleRL, StringFormat='{}{0:F3}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
                             <Label Grid.Row="5" Grid.Column="0" Content="Rear Left" HorizontalAlignment="Center" FontWeight="Bold"/>
-
-                            <!-- Rear Right -->
-                            <Grid Grid.Row="4" Grid.Column="2">
-                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SurgeThrottleRR}" />
-                                <Label Content="{Binding SurgeThrottleRR, StringFormat='{}{0:F3}'}" 
-                                       FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
+                            <Grid Grid.Row="4" Grid.Column="2"><ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SurgeThrottleRR}"/><Label Content="{Binding SurgeThrottleRR, StringFormat='{}{0:F3}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
                             <Label Grid.Row="5" Grid.Column="2" Content="Rear Right" HorizontalAlignment="Center" FontWeight="Bold"/>
                         </Grid>
                     </styles:SHSubSection>
 
                     <styles:SHSectionSeparator />
 
-                    <!-- SLIP * BRAKE Section -->
+                    <!-- ==================== SLIP BRAKE ==================== -->
                     <styles:SHSubSection Title="SLIP * SURGE (BRAKES ONLY)">
                         <Grid Margin="20,10,20,10" HorizontalAlignment="Center">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120"/>
-                                <ColumnDefinition Width="40"/>
-                                <ColumnDefinition Width="120"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="80"/>
-                                <RowDefinition Height="30"/>
-                                <RowDefinition Height="30"/>
-                                <RowDefinition Height="80"/>
-                                <RowDefinition Height="30"/>
-                            </Grid.RowDefinitions>
-
-                            <!-- Front Row Label -->
-                            <Label Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Content="FRONT" 
-                                   HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,0,0,5"/>
-
-                            <!-- Front Left -->
-                            <Grid Grid.Row="1" Grid.Column="0">
-                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SlipBrakeFL}" />
-                                <Label Content="{Binding SlipBrakeFL, StringFormat='{}{0:F3}'}" 
-                                       FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="40"/><ColumnDefinition Width="120"/></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="80"/><RowDefinition Height="30"/><RowDefinition Height="30"/><RowDefinition Height="80"/><RowDefinition Height="30"/></Grid.RowDefinitions>
+                            <Label Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Content="FRONT" HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,0,0,5"/>
+                            <Grid Grid.Row="1" Grid.Column="0"><ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SlipBrakeFL}"/><Label Content="{Binding SlipBrakeFL, StringFormat='{}{0:F3}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
                             <Label Grid.Row="2" Grid.Column="0" Content="Front Left" HorizontalAlignment="Center" FontWeight="Bold"/>
-
-                            <!-- Front Right -->
-                            <Grid Grid.Row="1" Grid.Column="2">
-                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SlipBrakeFR}" />
-                                <Label Content="{Binding SlipBrakeFR, StringFormat='{}{0:F3}'}" 
-                                       FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
+                            <Grid Grid.Row="1" Grid.Column="2"><ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SlipBrakeFR}"/><Label Content="{Binding SlipBrakeFR, StringFormat='{}{0:F3}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
                             <Label Grid.Row="2" Grid.Column="2" Content="Front Right" HorizontalAlignment="Center" FontWeight="Bold"/>
-
-                            <!-- Rear Row Label -->
-                            <Label Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Content="REAR" 
-                                   HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,20,0,5"/>
-
-                            <!-- Rear Left -->
-                            <Grid Grid.Row="4" Grid.Column="0">
-                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SlipBrakeRL}" />
-                                <Label Content="{Binding SlipBrakeRL, StringFormat='{}{0:F3}'}" 
-                                       FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
+                            <Label Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Content="REAR" HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,20,0,5"/>
+                            <Grid Grid.Row="4" Grid.Column="0"><ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SlipBrakeRL}"/><Label Content="{Binding SlipBrakeRL, StringFormat='{}{0:F3}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
                             <Label Grid.Row="5" Grid.Column="0" Content="Rear Left" HorizontalAlignment="Center" FontWeight="Bold"/>
-
-                            <!-- Rear Right -->
-                            <Grid Grid.Row="4" Grid.Column="2">
-                                <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SlipBrakeRR}" />
-                                <Label Content="{Binding SlipBrakeRR, StringFormat='{}{0:F3}'}" 
-                                       FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Grid>
+                            <Grid Grid.Row="4" Grid.Column="2"><ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding SlipBrakeRR}"/><Label Content="{Binding SlipBrakeRR, StringFormat='{}{0:F3}'}" FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
                             <Label Grid.Row="5" Grid.Column="2" Content="Rear Right" HorizontalAlignment="Center" FontWeight="Bold"/>
                         </Grid>
                     </styles:SHSubSection>
 
                     <styles:SHSectionSeparator />
 
-                    <!-- ABS * BRAKE Section -->
+                    <!-- ==================== ABS BRAKE ==================== -->
                     <styles:SHSubSection Title="ABS * BRAKE %">
                         <Grid Margin="10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="150"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="30"/>
-                            </Grid.RowDefinitions>
-
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="150"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                             <Label Grid.Row="0" Grid.Column="0" FontWeight="Bold">ABS Brake:</Label>
-                            <ProgressBar Grid.Row="0" Grid.Column="1" Height="20" Minimum="0" Maximum="100" Value="{Binding ABSBrake}" />
-                            <Label Grid.Row="0" Grid.Column="1" Content="{Binding ABSBrake, StringFormat='{}{0:F2}'}" 
-                                   FontFamily="Consolas" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <ProgressBar Grid.Row="0" Grid.Column="1" Height="20" Minimum="0" Maximum="100" Value="{Binding ABSBrake}"/>
+                            <Label Grid.Row="0" Grid.Column="1" Content="{Binding ABSBrake, StringFormat='{}{0:F2}'}" FontFamily="Consolas" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
                     </styles:SHSubSection>
 
                     <styles:SHSectionSeparator />
 
-                    <!-- WHEEL SLIP Section -->
-                    <styles:SHSubSection Title="WHEEL SLIP">
-                        <StackPanel>
-                            <!-- Slip Source Indicator -->
-                            <Grid Margin="10,5,10,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="120"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Label Grid.Column="0" FontWeight="Bold">Slip Source:</Label>
-                                <Label Grid.Column="1" Content="{Binding SlipSource}" FontFamily="Consolas" FontSize="14" FontWeight="Bold"/>
-                            </Grid>
-
-                            <!-- 4-Corner Slip Display -->
-                            <Grid Margin="20,10,20,10" HorizontalAlignment="Center">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="120"/>
-                                    <ColumnDefinition Width="40"/>
-                                    <ColumnDefinition Width="120"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="80"/>
-                                    <RowDefinition Height="30"/>
-                                    <RowDefinition Height="30"/>
-                                    <RowDefinition Height="80"/>
-                                    <RowDefinition Height="30"/>
-                                </Grid.RowDefinitions>
-
-                                <Label Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Content="FRONT"
-                                       HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,0,0,5"/>
-
-                                <!-- Front Left -->
-                                <Grid Grid.Row="1" Grid.Column="0">
-                                    <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding CustomSlipFL}" />
-                                    <Label Content="{Binding CustomSlipFL, StringFormat='{}{0:F1}'}"
-                                           FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Grid>
-                                <Label Grid.Row="2" Grid.Column="0" Content="Front Left" HorizontalAlignment="Center" FontWeight="Bold"/>
-
-                                <!-- Front Right -->
-                                <Grid Grid.Row="1" Grid.Column="2">
-                                    <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding CustomSlipFR}" />
-                                    <Label Content="{Binding CustomSlipFR, StringFormat='{}{0:F1}'}"
-                                           FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Grid>
-                                <Label Grid.Row="2" Grid.Column="2" Content="Front Right" HorizontalAlignment="Center" FontWeight="Bold"/>
-
-                                <Label Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="3" Content="REAR"
-                                       HorizontalAlignment="Center" FontWeight="Bold" FontSize="14" Margin="0,20,0,5"/>
-
-                                <!-- Rear Left -->
-                                <Grid Grid.Row="4" Grid.Column="0">
-                                    <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding CustomSlipRL}" />
-                                    <Label Content="{Binding CustomSlipRL, StringFormat='{}{0:F1}'}"
-                                           FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Grid>
-                                <Label Grid.Row="5" Grid.Column="0" Content="Rear Left" HorizontalAlignment="Center" FontWeight="Bold"/>
-
-                                <!-- Rear Right -->
-                                <Grid Grid.Row="4" Grid.Column="2">
-                                    <ProgressBar Orientation="Vertical" Width="60" Height="80" Minimum="0" Maximum="100" Value="{Binding CustomSlipRR}" />
-                                    <Label Content="{Binding CustomSlipRR, StringFormat='{}{0:F1}'}"
-                                           FontFamily="Consolas" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Grid>
-                                <Label Grid.Row="5" Grid.Column="2" Content="Rear Right" HorizontalAlignment="Center" FontWeight="Bold"/>
-                            </Grid>
-                        </StackPanel>
-                    </styles:SHSubSection>
-
-                    <styles:SHSectionSeparator />
-
-                    <!-- Status Section -->
+                    <!-- ==================== Plugin Status ==================== -->
                     <styles:SHSubSection Title="Plugin Status">
                         <Grid Margin="10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="200"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="30"/>
-                                <RowDefinition Height="30"/>
-                                <RowDefinition Height="30"/>
-                            </Grid.RowDefinitions>
-
-                            <Label Grid.Row="0" Grid.Column="0" FontWeight="Bold">ShakeIT Available:</Label>
-                            <Label Grid.Row="0" Grid.Column="1" Content="{Binding ShakeITAvailable}" FontFamily="Consolas" FontSize="14"/>
-
-                            <Label Grid.Row="1" Grid.Column="0" FontWeight="Bold">Slip Source:</Label>
-                            <Label Grid.Row="1" Grid.Column="1" Content="{Binding SlipSource}" FontFamily="Consolas" FontSize="14"/>
-
-                            <Label Grid.Row="2" Grid.Column="0" FontWeight="Bold">Current Car ID:</Label>
-                            <Label Grid.Row="2" Grid.Column="1" Content="{Binding CurrentCarId}" FontFamily="Consolas" FontSize="14"/>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="200"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="30"/><RowDefinition Height="30"/><RowDefinition Height="30"/><RowDefinition Height="30"/><RowDefinition Height="30"/></Grid.RowDefinitions>
+                            <Label Grid.Row="0" Grid.Column="0" FontWeight="Bold">Current Game:</Label>
+                            <Label Grid.Row="0" Grid.Column="1" Content="{Binding CurrentGame}" FontFamily="Consolas" FontSize="14"/>
+                            <Label Grid.Row="1" Grid.Column="0" FontWeight="Bold">ShakeIT Available:</Label>
+                            <Label Grid.Row="1" Grid.Column="1" Content="{Binding ShakeITAvailable}" FontFamily="Consolas" FontSize="14"/>
+                            <Label Grid.Row="2" Grid.Column="0" FontWeight="Bold">Slip Source:</Label>
+                            <Label Grid.Row="2" Grid.Column="1" Content="{Binding SlipSource}" FontFamily="Consolas" FontSize="14"/>
+                            <Label Grid.Row="3" Grid.Column="0" FontWeight="Bold">TC/ABS Modes:</Label>
+                            <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
+                                <Label Content="{Binding SlipTCMode}" FontFamily="Consolas" FontSize="14"/>
+                                <Label Content=" / " FontSize="14"/>
+                                <Label Content="{Binding LockABSMode}" FontFamily="Consolas" FontSize="14"/>
+                            </StackPanel>
+                            <Label Grid.Row="4" Grid.Column="0" FontWeight="Bold">Current Car ID:</Label>
+                            <Label Grid.Row="4" Grid.Column="1" Content="{Binding CurrentCarId}" FontFamily="Consolas" FontSize="14"/>
                         </Grid>
                     </styles:SHSubSection>
 
