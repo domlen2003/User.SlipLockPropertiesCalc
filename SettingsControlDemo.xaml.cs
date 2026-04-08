@@ -22,5 +22,15 @@ namespace User.SlipLockPropertiesCalc
         {
             Plugin.RequestRetest();
         }
+
+        private void GenerateProfileButton_Click(object sender, RoutedEventArgs e)
+        {
+            Plugin.GenerateShakeITProfile();
+        }
+
+        private void GenerateHapticButton_Click(object sender, RoutedEventArgs e)
+        {
+            Plugin.GenerateHapticPedalProfile();
+        }
     }
 }
