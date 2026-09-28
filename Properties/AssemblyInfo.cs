@@ -1,36 +1,24 @@
-﻿using System.Reflection;
-using System.Runtime.CompilerServices;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
-// Les informations générales relatives à un assembly dépendent de 
-// l'ensemble d'attributs suivant. Changez les valeurs de ces attributs pour modifier les informations
-// associées à un assembly.
-[assembly: AssemblyTitle("User.SlipLockPropertiesCalc")]
-[assembly: AssemblyDescription("")]
+// General assembly information.
+[assembly: AssemblyTitle("Slip Lock Properties Calc")]
+[assembly: AssemblyDescription("SimHub plugin: per-wheel slip/lock channels with corner load estimation and understeer/oversteer detection for haptic devices.")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("User.SlipLockPropertiesCalc")]
-[assembly: AssemblyCopyright("Copyright ©  2016")]
+[assembly: AssemblyCompany("Dominik Lenz")]
+[assembly: AssemblyProduct("Slip Lock Properties Calc")]
+[assembly: AssemblyCopyright("Copyright © 2026 Dominik Lenz")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
-// L'affectation de la valeur false à ComVisible rend les types invisibles dans cet assembly 
-// aux composants COM.  Si vous devez accéder à un type dans cet assembly à partir de 
-// COM, affectez la valeur true à l'attribut ComVisible sur ce type.
+// Types are not visible to COM.
 [assembly: ComVisible(false)]
 
-// Le GUID suivant est pour l'ID de la typelib si ce projet est exposé à COM
+// Type library id if this project is ever exposed to COM.
 [assembly: Guid("833040c9-fe5e-4ccf-b21d-71979e049b6b")]
 
-// Les informations de version pour un assembly se composent des quatre valeurs suivantes :
-//
-//      Version principale
-//      Version secondaire 
-//      Numéro de build
-//      Révision
-//
-// Vous pouvez spécifier toutes les valeurs ou indiquer les numéros de build et de révision par défaut 
-// en utilisant '*', comme indiqué ci-dessous :
-// [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+// The console test runner (Tests\) compiles the SimHub-independent sources itself; no InternalsVisibleTo needed.
+
+// Version: major.minor.build.revision.
+[assembly: AssemblyVersion("2.0.0.0")]
+[assembly: AssemblyFileVersion("2.0.0.0")]

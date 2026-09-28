@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <!-- Console test runner (no NuGet needed). Compiles the SimHub-independent plugin sources directly.
+       Build:  MSBuild Tests\User.SlipLockPropertiesCalc.Tests.csproj -p:Configuration=Debug
+       Run:    Tests\bin\Debug\User.SlipLockPropertiesCalc.Tests.exe [options], see Tests\Program.cs -->
+
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{6C1B7E2A-4D0F-4E57-9B39-2E7A5C3F8D11}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>User.SlipLockPropertiesCalc.Tests</RootNamespace>
+    <AssemblyName>User.SlipLockPropertiesCalc.Tests</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <LangVersion>10.0</LangVersion>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Deterministic>true</Deterministic>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <DefineConstants>DEBUG;TRACE;TESTS</DefineConstants>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Newtonsoft.Json">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(SIMHUB_INSTALL_PATH)Newtonsoft.Json.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- SimHub-independent plugin sources (must never reference SimHub/WPF assemblies). -->
+    <Compile Include="..\Core\**\*.cs" Link="Linked\Core\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Telemetry\**\*.cs" Link="Linked\Telemetry\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\SlipLock\**\*.cs" Link="Linked\SlipLock\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Balance\**\*.cs" Link="Linked\Balance\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Settings\**\*.cs" Link="Linked\Settings\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Profiles\**\*.cs" Link="Linked\Profiles\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\UI\LiveSnapshot.cs" Link="Linked\UI\LiveSnapshot.cs" />
+    <!-- Test sources. -->
+    <Compile Include="**\*.cs" Exclude="bin\**;obj\**" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

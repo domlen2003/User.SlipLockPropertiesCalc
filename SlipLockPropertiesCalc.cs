@@ -1,776 +1,1131 @@
+using System;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Threading;
+using System.Windows.Media;
 using GameReaderCommon;
 using SimHub.Plugins;
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.IO;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Windows.Controls;
-using System.Windows.Media;
+using User.SlipLockPropertiesCalc.Balance;
+using User.SlipLockPropertiesCalc.Balance.Recording;
+using User.SlipLockPropertiesCalc.Balance.Sources;
+using User.SlipLockPropertiesCalc.Integration;
+using User.SlipLockPropertiesCalc.Profiles;
+using User.SlipLockPropertiesCalc.Settings;
+using User.SlipLockPropertiesCalc.SlipLock;
+using User.SlipLockPropertiesCalc.Telemetry;
+using User.SlipLockPropertiesCalc.UI;
 
-namespace User.SlipLockPropertiesCalc
+namespace User.SlipLockPropertiesCalc;
+
+/// <summary>
+/// SimHub plugin shell: wires SimHub to the SimHub-independent modules and owns all runtime state.
+/// <para>
+/// Threading: <see cref="DataUpdate"/> runs on SimHub's data thread and owns every processing object, the current
+/// car profile and the save scheduler. The settings UI (UI thread) talks to the plugin only through
+/// <see cref="ISlipLockHost"/>: it reads a <see cref="LiveSnapshot"/> copied under a lock at up to 20 Hz, writes
+/// bool/enum settings directly and queues everything else (numeric settings, per-car edits) on
+/// <see cref="commands"/>, which the data thread drains at the start of each frame.
+/// </para>
+/// <para>
+/// Fault isolation: <see cref="DataUpdate"/> runs its stages (frame context and car handling, slip/lock, balance,
+/// persistence, UI snapshot) in separate guarded blocks. A stage that throws has its outputs zeroed, so a
+/// persistent error can never freeze haptic effects at their last value, and the later stages still run (the error
+/// reaches the UI and saves still happen).
+/// </para>
+/// <para>
+/// Hot path: <see cref="DataUpdate"/> is allocation-free in steady state; allocations happen only on game/car/
+/// session changes, in the rate-limited error path, and in the optional 1 Hz debug file log.
+/// </para>
+/// COMPATIBILITY: class name, namespace, attributes and the settings key are part of existing user setups.
+/// </summary>
+[PluginDescription("Per-wheel slip/lock channels with corner load estimation and understeer/oversteer detection for haptic devices")]
+[PluginAuthor("Dominik Lenz")]
+[PluginName("Slip Lock Properties Calc")]
+public sealed class SlipLockPropertiesCalc : IPlugin, IDataPlugin, IWPFSettingsV2, ISlipLockHost
 {
-    [PluginDescription("Per-wheel slip/lock channels with corner load estimation for haptic devices")]
-    [PluginAuthor("Dominik Lenz")]
-    [PluginName("Slip Lock Properties Calc")]
-    public class SlipLockPropertiesCalc : IPlugin, IDataPlugin, IWPFSettingsV2, INotifyPropertyChanged
+    /// <summary>SimHub common-settings key (v1; must not change).</summary>
+    public const string SettingsKey = "GeneralSettings";
+
+    private const string PluginDataFolder = "SlipLockPropertiesCalc";
+    private const string RecordingsFolder = "Recordings";
+    private const string NotAvailable = "N/A";
+    private const double KmhPerMs = 3.6;
+    private const double PercentScale = 100.0;
+
+    /// <summary>The UI snapshot is refreshed at most this often (20 Hz).</summary>
+    private const double SnapshotIntervalSeconds = 0.05;
+
+    /// <summary>The balance resolution text allocates, so it is refreshed at 1 Hz and only while the debug view is shown.</summary>
+    private const double ResolutionIntervalSeconds = 1.0;
+
+    /// <summary>LMU's native model name can be empty for the first frames: retry resolution this often ...</summary>
+    private const double IdentityRetryIntervalSeconds = 1.0;
+
+    /// <summary>... for at most this long after the car appeared.</summary>
+    private const double IdentityRetryWindowSeconds = 10.0;
+
+    /// <summary>After the first error, further errors are logged at most this often.</summary>
+    private const double ErrorLogIntervalSeconds = 10.0;
+
+    /// <summary>Smoothing of the displayed DataUpdate duration.</summary>
+    private const double TimingSmoothing = 0.05;
+
+    /// <summary>How long a UI request waits for the data thread before giving up.</summary>
+    private const int DataThreadTimeoutMs = 3000;
+
+    /// <summary>End(): how long to wait for queued asynchronous profile writes.</summary>
+    private static readonly TimeSpan ShutdownWriteTimeout = TimeSpan.FromSeconds(5);
+
+    private static readonly BalanceOverrides NoOverrides = new BalanceOverrides();
+
+    /// <summary>Diagnostics text per <see cref="CarKeySource"/> (indexed by the enum value).</summary>
+    private static readonly string[] KeySourceTexts = { string.Empty, "native model", "car model", "car id" };
+
+    // ---- Infrastructure ----
+    private readonly Stopwatch clock = Stopwatch.StartNew();
+    private readonly ConcurrentQueue<Action> commands = new ConcurrentQueue<Action>();
+    private readonly object snapshotLock = new object();
+    private readonly LiveSnapshot snapshot = new LiveSnapshot();
+    private readonly FrameContext ctx = new FrameContext();
+    private SimHubLog log;
+    private PluginManagerTelemetryReader reader;
+    private PropertyExporter exporter;
+    private DebugFileLog debugLog;
+    private SettingsWriter settingsWriter;
+    private string pluginDataRoot;
+    private int settingsChangedFlag;
+    private int dataThreadId = -1;
+
+    // ---- Slip/lock pipeline ----
+    private readonly MaxGTracker maxG = new MaxGTracker();
+    private readonly SlipLockProcessor processor = new SlipLockProcessor();
+    private readonly SlipLockInputs inputs = new SlipLockInputs();
+    private readonly SlipLockTuning tuning = new SlipLockTuning();
+    private readonly SlipLockOutputs outputs = new SlipLockOutputs();
+    private SlipSourceResolver slipResolver;
+    private CapabilityTracker capabilities;
+    private WheelSpeedModeDetector detector;
+    private GamePreset preset = GamePresets.Default;
+    private string presetName = GamePresets.DefaultName;
+
+    // ---- Balance ----
+    private readonly VehicleState vehicleState = new VehicleState();
+    private IVehicleStateSource balanceSource = new NullStateSource();
+    private BalanceEstimator estimator;
+    private BalanceRecorder recorder;
+    private string balanceResolution = string.Empty;
+    private double nextResolutionTime = double.NegativeInfinity;
+
+    // ---- Persistence / car profile (data thread) ----
+    private CarProfileStore store;
+    private SaveScheduler scheduler;
+    private CarProfile profile;
+    private volatile CarIdentity identity = CarIdentity.None;
+    private string carProfilePath = string.Empty;
+    private string carKeySourceText = string.Empty;
+    private int carProfileVersion;
+
+    // ---- Per-frame bookkeeping (data thread) ----
+    private bool wasRunning;
+    private bool gameKnown;
+    private string lastGame = string.Empty;
+    private string lastMaxGCarId = NotAvailable;
+    private bool identityDirty = true;
+    private string seenCarId;
+    private string seenCarModel;
+    private double identityRetryUntil = double.NegativeInfinity;
+    private double nextIdentityRetry = double.PositiveInfinity;
+    private bool sessionKnown;
+    private Guid lastSessionId;
+    private double lastSnapshotTime = double.NegativeInfinity;
+    private long frameCount;
+    private double dataUpdateMs;
+
+    // ---- Error reporting (data thread) ----
+    private string lastError = string.Empty;
+    private bool errorLogged;
+    private double lastErrorLogTime = double.NegativeInfinity;
+    private int suppressedErrors;
+
+    /// <summary>Global settings (live object, see <see cref="ISlipLockHost.Settings"/>).</summary>
+    public PluginSettings Settings { get; private set; }
+
+    /// <summary>Set by SimHub before <see cref="Init"/>.</summary>
+    public PluginManager PluginManager { get; set; }
+
+    /// <summary>Left menu icon (24x24).</summary>
+    public ImageSource PictureIcon => this.ToIcon(Properties.Resources.sdkmenuicon);
+
+    /// <summary>Short title for SimHub's left menu.</summary>
+    public string LeftMenuTitle => "Slip Lock Calc";
+
+    // =====================================================================================================
+    // SimHub lifecycle
+    // =====================================================================================================
+
+    /// <summary>Called once after plugin start-up: loads settings, builds all modules and registers properties.</summary>
+    public void Init(PluginManager pluginManager)
     {
-        public SlipLockSettings Settings;
-        public PluginManager PluginManager { get; set; }
-        public ImageSource PictureIcon => this.ToIcon(Properties.Resources.sdkmenuicon);
-        public string LeftMenuTitle => "Slip Lock Calc";
+        log = new SimHubLog();
+        log.Info("Starting plugin");
+        PluginManager = pluginManager;
 
-        public event PropertyChangedEventHandler PropertyChanged;
-        private void OnPropertyChanged([CallerMemberName] string n = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
+        Settings = this.ReadCommonSettings(SettingsKey, () => new PluginSettings()) ?? new PluginSettings();
+        Settings.Normalize();
 
-        private static readonly string[] W = { "FrontLeft", "FrontRight", "RearLeft", "RearRight" };
-        private static readonly int[] LatSign = { -1, 1, -1, 1 };
-        private static readonly int[] LongSign = { 1, 1, -1, -1 };
+        string simHubDirectory = Path.GetDirectoryName(typeof(PluginManager).Assembly.Location) ?? ".";
+        pluginDataRoot = Path.Combine(simHubDirectory, "PluginsData", PluginDataFolder);
 
-        // Property name variants — per-wheel speed
-        private static readonly string[][] WheelSpeedV = {
-            new[] { "DataCorePlugin.GameRawData.Telemetry.LFspeed", "LFspeed" },
-            new[] { "DataCorePlugin.GameRawData.Telemetry.RFspeed", "RFspeed" },
-            new[] { "DataCorePlugin.GameRawData.Telemetry.LRspeed", "LRspeed" },
-            new[] { "DataCorePlugin.GameRawData.Telemetry.RRspeed", "RRspeed" },
-        };
-        // Slip sources: ShakeIT first (works for all games when profile active), native fallbacks
-        private static readonly string[][] SlipV = {
-            new[] { "ShakeITBSV3Plugin.Export.WheelSlip.FrontLeft", "ShakeITBSV3Plugin.Export.proxyS.FrontLeft",   // ShakeIT (all games)
-                    "DataCorePlugin.GameRawData.Physics.WheelSlip01" },                                            // ACC native fallback
-            new[] { "ShakeITBSV3Plugin.Export.WheelSlip.FrontRight", "ShakeITBSV3Plugin.Export.proxyS.FrontRight",
-                    "DataCorePlugin.GameRawData.Physics.WheelSlip02" },
-            new[] { "ShakeITBSV3Plugin.Export.WheelSlip.RearLeft", "ShakeITBSV3Plugin.Export.proxyS.RearLeft",
-                    "DataCorePlugin.GameRawData.Physics.WheelSlip03" },
-            new[] { "ShakeITBSV3Plugin.Export.WheelSlip.RearRight", "ShakeITBSV3Plugin.Export.proxyS.RearRight",
-                    "DataCorePlugin.GameRawData.Physics.WheelSlip04" },
-        };
-        // LMU/rF2: wheel rotation (rad/s) — need to calculate slip from this + vehicle speed
-        private static readonly string[] LMURotationProps = {
-            "DataCorePlugin.GameRawData.CurrentPlayerTelemetry.mWheels01.mRotation",
-            "DataCorePlugin.GameRawData.CurrentPlayerTelemetry.mWheels02.mRotation",
-            "DataCorePlugin.GameRawData.CurrentPlayerTelemetry.mWheels03.mRotation",
-            "DataCorePlugin.GameRawData.CurrentPlayerTelemetry.mWheels04.mRotation",
-        };
-        private static readonly string[] LMURadiusProps = {
-            "DataCorePlugin.GameRawData.CurrentPlayerTelemetry.mWheels01.mStaticUndeflectedRadius",
-            "DataCorePlugin.GameRawData.CurrentPlayerTelemetry.mWheels02.mStaticUndeflectedRadius",
-            "DataCorePlugin.GameRawData.CurrentPlayerTelemetry.mWheels03.mStaticUndeflectedRadius",
-            "DataCorePlugin.GameRawData.CurrentPlayerTelemetry.mWheels04.mStaticUndeflectedRadius",
-        };
-        private bool _hasLMURotation = false;
-        private double[] _tireRadii = new double[4];
-        // Track which slip source was resolved (for logging/display)
-        private string _slipSourceType = "unknown";
+        reader = new PluginManagerTelemetryReader(pluginManager);
+        slipResolver = new SlipSourceResolver();
+        capabilities = new CapabilityTracker(Settings);
+        detector = new WheelSpeedModeDetector(Settings, slipResolver, capabilities);
+        estimator = new BalanceEstimator(Settings.Balance, log);
+        recorder = new BalanceRecorder(log);
+        store = new CarProfileStore(pluginDataRoot, log);
+        settingsWriter = new SettingsWriter(copy => this.SaveCommonSettings(SettingsKey, copy), log);
+        scheduler = new SaveScheduler(SaveSettingsAsync, SaveCurrentProfile, log);
+        debugLog = new DebugFileLog(Path.Combine(simHubDirectory, "Logs", DebugFileLog.FileName), log);
 
-        // State
-        private enum DetState { Loading, Detecting, PerWheel, Mono }
-        private DetState _det = DetState.Loading;
-        private int _dynFrames = 0;
-        private bool _retestReq = false;
-        private string _lastGame = "";
-        private bool _absEver = false, _tcEver = false;
-        private string[] _wsProps, _slipProps;
-        private bool _scanned = false;
-        private bool _selfProbed = false;
-        private string _propPrefix = ""; // resolved prefix for our own properties
-        private GamePreset _preset;
+        exporter = new PropertyExporter(pluginManager, GetType());
+        exporter.RegisterSlipLock(outputs, maxG);
+        exporter.RegisterBalance(estimator.Outputs);
+        VerifyPropertyRegistration(pluginManager);
 
-        // Debug
-        private string _logPath;
-        private DateTime _lastLog = DateTime.MinValue;
-        private int _logFrames = 0;
-        private void Log(string m, bool f = false) { try { _logFrames++; if (!f && (DateTime.Now - _lastLog).TotalSeconds < 1) return; _lastLog = DateTime.Now; File.AppendAllText(_logPath, $"[{DateTime.Now:HH:mm:ss.fff}] (f#{_logFrames}) {m}\r\n"); _logFrames = 0; } catch { } }
+        log.Info("Plugin initialized: " + exporter.Names.Count.ToString(CultureInfo.InvariantCulture)
+            + " properties, data folder " + pluginDataRoot);
+    }
 
-        // ==================== UI Properties ====================
-        private double _maxSway = 5; public double MaxSway { get => _maxSway; set { _maxSway = value; OnPropertyChanged(); } }
-        private double _maxSurge = 5; public double MaxSurge { get => _maxSurge; set { _maxSurge = value; OnPropertyChanged(); } }
-        private double _maxDecel = 5; public double MaxDecel { get => _maxDecel; set { _maxDecel = value; OnPropertyChanged(); } }
-
-        private string _currentCarId = "N/A"; public string CurrentCarId { get => _currentCarId; set { _currentCarId = value; OnPropertyChanged(); } }
-        private string _currentGame = ""; public string CurrentGame { get => _currentGame; set { _currentGame = value; OnPropertyChanged(); } }
-        private string _shakeITStatus = "..."; public string ShakeITStatus { get => _shakeITStatus; set { _shakeITStatus = value; OnPropertyChanged(); } }
-        private string _slipSource = "..."; public string SlipSource { get => _slipSource; set { _slipSource = value; OnPropertyChanged(); } }
-        private string _perWheelSupport = "?"; public string PerWheelSupport { get => _perWheelSupport; set { _perWheelSupport = value; OnPropertyChanged(); } }
-        private string _detectionStatus = ""; public string DetectionStatus { get => _detectionStatus; set { _detectionStatus = value; OnPropertyChanged(); } }
-        private bool _isDetecting = false; public bool IsDetecting { get => _isDetecting; set { _isDetecting = value; OnPropertyChanged(); } }
-        private string _detectSpeedCond = ""; public string DetectSpeedCond { get => _detectSpeedCond; set { _detectSpeedCond = value; OnPropertyChanged(); } }
-        private string _detectCornerCond = ""; public string DetectCornerCond { get => _detectCornerCond; set { _detectCornerCond = value; OnPropertyChanged(); } }
-        private string _detectBrakeCond = ""; public string DetectBrakeCond { get => _detectBrakeCond; set { _detectBrakeCond = value; OnPropertyChanged(); } }
-        private string _profileStatus = ""; public string ProfileStatus { get => _profileStatus; set { _profileStatus = value; OnPropertyChanged(); } }
-        private string _activePreset = "?"; public string ActivePreset { get => _activePreset; set { _activePreset = value; OnPropertyChanged(); } }
-
-        // ABS/TC capability
-        private string _gameExportsABS = "?"; public string GameExportsABS { get => _gameExportsABS; set { _gameExportsABS = value; OnPropertyChanged(); } }
-        private string _gameExportsTC = "?"; public string GameExportsTC { get => _gameExportsTC; set { _gameExportsTC = value; OnPropertyChanged(); } }
-        private string _carHasABS = "?"; public string CarHasABS { get => _carHasABS; set { _carHasABS = value; OnPropertyChanged(); } }
-        private string _carHasTC = "?"; public string CarHasTC { get => _carHasTC; set { _carHasTC = value; OnPropertyChanged(); } }
-        private string _absEnabled = "?"; public string ABSEnabled { get => _absEnabled; set { _absEnabled = value; OnPropertyChanged(); } }
-        private string _tcEnabled = "?"; public string TCEnabled { get => _tcEnabled; set { _tcEnabled = value; OnPropertyChanged(); } }
-        private string _aggSlipUsing = "?"; public string AggregateSlipUsing { get => _aggSlipUsing; set { _aggSlipUsing = value; OnPropertyChanged(); } }
-        private string _aggLockUsing = "?"; public string AggregateLockUsing { get => _aggLockUsing; set { _aggLockUsing = value; OnPropertyChanged(); } }
-
-        private bool _isBaseMono = true; public bool IsBaseMono { get => _isBaseMono; set { _isBaseMono = value; OnPropertyChanged(); } }
-        private bool _isBasePerWheel = false; public bool IsBasePerWheel { get => _isBasePerWheel; set { _isBasePerWheel = value; OnPropertyChanged(); } }
-
-        // Settings sliders (4 pedal blends)
-        private double _slipThrottleBlend; public double SlipThrottleBlend { get => _slipThrottleBlend; set { _slipThrottleBlend = value; OnPropertyChanged(); Settings.SlipThrottleBlend = value; } }
-        private double _tcThrottleBlend; public double TCThrottleBlend { get => _tcThrottleBlend; set { _tcThrottleBlend = value; OnPropertyChanged(); Settings.TCThrottleBlend = value; } }
-        private double _lockBrakeBlend; public double LockBrakeBlend { get => _lockBrakeBlend; set { _lockBrakeBlend = value; OnPropertyChanged(); Settings.LockBrakeBlend = value; } }
-        private double _absBrakeBlend; public double ABSBrakeBlend { get => _absBrakeBlend; set { _absBrakeBlend = value; OnPropertyChanged(); Settings.ABSBrakeBlend = value; } }
-        private double _slipThreshold; public double SlipThreshold { get => _slipThreshold; set { _slipThreshold = value; OnPropertyChanged(); Settings.SlipThreshold = value; } }
-        private double _lockThreshold; public double LockThreshold { get => _lockThreshold; set { _lockThreshold = value; OnPropertyChanged(); Settings.LockThreshold = value; } }
-        private double _tcThreshold; public double TCThreshold { get => _tcThreshold; set { _tcThreshold = value; OnPropertyChanged(); Settings.TCThreshold = value; } }
-        private double _absThreshold; public double ABSThreshold { get => _absThreshold; set { _absThreshold = value; OnPropertyChanged(); Settings.ABSThreshold = value; } }
-        private bool _gateSlipOnThrottle; public bool GateSlipOnThrottle { get => _gateSlipOnThrottle; set { _gateSlipOnThrottle = value; OnPropertyChanged(); Settings.GateSlipOnThrottle = value; } }
-        private bool _gateLockOnBrake; public bool GateLockOnBrake { get => _gateLockOnBrake; set { _gateLockOnBrake = value; OnPropertyChanged(); Settings.GateLockOnBrake = value; } }
-
-        // Envelope shaping
-        private double _slipAttackMs; public double SlipAttackMs { get => _slipAttackMs; set { _slipAttackMs = value; OnPropertyChanged(); Settings.SlipAttackMs = value; } }
-        private double _slipReleaseMs; public double SlipReleaseMs { get => _slipReleaseMs; set { _slipReleaseMs = value; OnPropertyChanged(); Settings.SlipReleaseMs = value; } }
-        private double _lockAttackMs; public double LockAttackMs { get => _lockAttackMs; set { _lockAttackMs = value; OnPropertyChanged(); Settings.LockAttackMs = value; } }
-        private double _lockReleaseMs; public double LockReleaseMs { get => _lockReleaseMs; set { _lockReleaseMs = value; OnPropertyChanged(); Settings.LockReleaseMs = value; } }
-        private double _absAttackMs; public double ABSAttackMs { get => _absAttackMs; set { _absAttackMs = value; OnPropertyChanged(); Settings.ABSAttackMs = value; } }
-        private double _absReleaseMs; public double ABSReleaseMs { get => _absReleaseMs; set { _absReleaseMs = value; OnPropertyChanged(); Settings.ABSReleaseMs = value; } }
-        private double _tcAttackMs; public double TCAttackMs { get => _tcAttackMs; set { _tcAttackMs = value; OnPropertyChanged(); Settings.TCAttackMs = value; } }
-        private double _tcReleaseMs; public double TCReleaseMs { get => _tcReleaseMs; set { _tcReleaseMs = value; OnPropertyChanged(); Settings.TCReleaseMs = value; } }
-
-        // Envelope runtime state (not persisted)
-        private double[] _envSlip = new double[4], _envLock = new double[4], _envABS = new double[4], _envTC = new double[4];
-        private DateTime _lastFrameTime = DateTime.MinValue;
-
-        // Pipeline display values
-        private double _baseSlipMono; public double BaseSlipMono { get => _baseSlipMono; set { _baseSlipMono = value; OnPropertyChanged(); } }
-        private double _baseLockMono; public double BaseLockMono { get => _baseLockMono; set { _baseLockMono = value; OnPropertyChanged(); } }
-        private double _baseABSMono; public double BaseABSMono { get => _baseABSMono; set { _baseABSMono = value; OnPropertyChanged(); } }
-        private double _baseTCMono; public double BaseTCMono { get => _baseTCMono; set { _baseTCMono = value; OnPropertyChanged(); } }
-        private double _baseSlipFL; public double BaseSlipFL { get => _baseSlipFL; set { _baseSlipFL = value; OnPropertyChanged(); } }
-        private double _baseSlipFR; public double BaseSlipFR { get => _baseSlipFR; set { _baseSlipFR = value; OnPropertyChanged(); } }
-        private double _baseSlipRL; public double BaseSlipRL { get => _baseSlipRL; set { _baseSlipRL = value; OnPropertyChanged(); } }
-        private double _baseSlipRR; public double BaseSlipRR { get => _baseSlipRR; set { _baseSlipRR = value; OnPropertyChanged(); } }
-
-        // Preprocessor output (after proxyL, normalized 0-100)
-        private double _slipFL; public double SlipFL { get => _slipFL; set { _slipFL = value; OnPropertyChanged(); } }
-        private double _slipFR; public double SlipFR { get => _slipFR; set { _slipFR = value; OnPropertyChanged(); } }
-        private double _slipRL; public double SlipRL { get => _slipRL; set { _slipRL = value; OnPropertyChanged(); } }
-        private double _slipRR; public double SlipRR { get => _slipRR; set { _slipRR = value; OnPropertyChanged(); } }
-        private double _lockFL; public double LockFL { get => _lockFL; set { _lockFL = value; OnPropertyChanged(); } }
-        private double _lockFR; public double LockFR { get => _lockFR; set { _lockFR = value; OnPropertyChanged(); } }
-        private double _lockRL; public double LockRL { get => _lockRL; set { _lockRL = value; OnPropertyChanged(); } }
-        private double _lockRR; public double LockRR { get => _lockRR; set { _lockRR = value; OnPropertyChanged(); } }
-        private double _absFL; public double ABSFL { get => _absFL; set { _absFL = value; OnPropertyChanged(); } }
-        private double _absFR; public double ABSFR { get => _absFR; set { _absFR = value; OnPropertyChanged(); } }
-        private double _absRL; public double ABSRL { get => _absRL; set { _absRL = value; OnPropertyChanged(); } }
-        private double _absRR; public double ABSRR { get => _absRR; set { _absRR = value; OnPropertyChanged(); } }
-        private double _tcFL; public double TCFL { get => _tcFL; set { _tcFL = value; OnPropertyChanged(); } }
-        private double _tcFR; public double TCFR { get => _tcFR; set { _tcFR = value; OnPropertyChanged(); } }
-        private double _tcRL; public double TCRL { get => _tcRL; set { _tcRL = value; OnPropertyChanged(); } }
-        private double _tcRR; public double TCRR { get => _tcRR; set { _tcRR = value; OnPropertyChanged(); } }
-
-        // Blended
-        private double _slipBFL; public double SlipBFL { get => _slipBFL; set { _slipBFL = value; OnPropertyChanged(); } }
-        private double _slipBFR; public double SlipBFR { get => _slipBFR; set { _slipBFR = value; OnPropertyChanged(); } }
-        private double _slipBRL; public double SlipBRL { get => _slipBRL; set { _slipBRL = value; OnPropertyChanged(); } }
-        private double _slipBRR; public double SlipBRR { get => _slipBRR; set { _slipBRR = value; OnPropertyChanged(); } }
-        private double _lockBFL; public double LockBFL { get => _lockBFL; set { _lockBFL = value; OnPropertyChanged(); } }
-        private double _lockBFR; public double LockBFR { get => _lockBFR; set { _lockBFR = value; OnPropertyChanged(); } }
-        private double _lockBRL; public double LockBRL { get => _lockBRL; set { _lockBRL = value; OnPropertyChanged(); } }
-        private double _lockBRR; public double LockBRR { get => _lockBRR; set { _lockBRR = value; OnPropertyChanged(); } }
-
-        // Aggregates
-        private double _aggSFL; public double AggSFL { get => _aggSFL; set { _aggSFL = value; OnPropertyChanged(); } }
-        private double _aggSFR; public double AggSFR { get => _aggSFR; set { _aggSFR = value; OnPropertyChanged(); } }
-        private double _aggSRL; public double AggSRL { get => _aggSRL; set { _aggSRL = value; OnPropertyChanged(); } }
-        private double _aggSRR; public double AggSRR { get => _aggSRR; set { _aggSRR = value; OnPropertyChanged(); } }
-        private double _aggLFL; public double AggLFL { get => _aggLFL; set { _aggLFL = value; OnPropertyChanged(); } }
-        private double _aggLFR; public double AggLFR { get => _aggLFR; set { _aggLFR = value; OnPropertyChanged(); } }
-        private double _aggLRL; public double AggLRL { get => _aggLRL; set { _aggLRL = value; OnPropertyChanged(); } }
-        private double _aggLRR; public double AggLRR { get => _aggLRR; set { _aggLRR = value; OnPropertyChanged(); } }
-        private string _slipTCMode = "..."; public string SlipTCMode { get => _slipTCMode; set { _slipTCMode = value; OnPropertyChanged(); } }
-        private string _lockABSMode = "..."; public string LockABSMode { get => _lockABSMode; set { _lockABSMode = value; OnPropertyChanged(); } }
-
-        // Corner load display
-        private double _loadFL; public double LoadFL { get => _loadFL; set { _loadFL = value; OnPropertyChanged(); } }
-        private double _loadFR; public double LoadFR { get => _loadFR; set { _loadFR = value; OnPropertyChanged(); } }
-        private double _loadRL; public double LoadRL { get => _loadRL; set { _loadRL = value; OnPropertyChanged(); } }
-        private double _loadRR; public double LoadRR { get => _loadRR; set { _loadRR = value; OnPropertyChanged(); } }
-
-        // ==================== Public API ====================
-        public void RequestRetest() { _retestReq = true; }
-
-        public void GenerateShakeITProfile()
+    /// <summary>
+    /// Start-up self-check: every ShakeIT/dash formula and generated profile references the properties as
+    /// <c>SlipLockPropertiesCalc.*</c>. A registration under another prefix would silently turn all effects off.
+    /// </summary>
+    private void VerifyPropertyRegistration(PluginManager pluginManager)
+    {
+        try
         {
-            try
+            string probe = PropertyExporter.FullName("SlipLock.MaxSway");
+            if (!exporter.PrefixMatchesPluginType)
             {
-                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "SimHub");
-                Directory.CreateDirectory(dir);
-                string p = Path.Combine(dir, "SlipLock_DataExport.siprofile");
-                string g(int _) => Guid.NewGuid().ToString();
-                string j = $@"{{""CarChoices"":[],""IncludeOutputSettingsInProfile"":false,""UnmuteEffectsAfterSimhubRestart"":true,""EffectsContainers"":[{{""ContainerType"":""GroupContainer"",""IsEnabled"":true,""Gain"":100.0,""Description"":""SlipLock Data Export"",""EffectsContainers"":[{{""ContainerType"":""WheelsSlipContainer"",""IsEnabled"":true,""Gain"":50.0,""BrakeFilter"":10,""MuteWhenLockEffectIsActive"":false,""ThrottleFilter"":10,""UseBrakeFilter"":false,""UseThrottleFilter"":false,""UseLegacyIracingAlgorythm"":false,""ContainerId"":""{g(0)}"",""AggregationMode"":""Corners"",""Filter"":{{""GammaValue"":1.0,""InputGain"":100.0,""MinimumForce"":0,""Threshold"":0,""FilterType"":""GammaFilter""}},""Output"":{{""UseHighFrequency"":false,""HighFrequency"":50,""WhiteNoise"":10,""UseWhiteNoise"":false,""FrequencyBasedOnPreFilter"":false,""UsePrehemptiveMode"":false,""Frequency"":50,""PropertyName"":""WheelSlip"",""ExportProperty"":true,""DisableOutput"":true,""OutputType"":""ToneOutput""}}}},{{""ContainerType"":""WheelsLockContainer"",""IsEnabled"":true,""Gain"":50.0,""IsLock"":true,""UseLegacyIracingAlgorythm"":false,""LockSensibility"":50.0,""BrakeFilter"":20,""ContainerId"":""{g(1)}"",""AggregationMode"":""Corners"",""Filter"":{{""GammaValue"":1.0,""InputGain"":100.0,""MinimumForce"":0,""Threshold"":0,""FilterType"":""GammaFilter""}},""Output"":{{""UseHighFrequency"":false,""HighFrequency"":50,""WhiteNoise"":10,""UseWhiteNoise"":false,""FrequencyBasedOnPreFilter"":false,""UsePrehemptiveMode"":false,""Frequency"":50,""PropertyName"":""WheelLock"",""ExportProperty"":true,""DisableOutput"":true,""OutputType"":""ToneOutput""}}}}],""ContainerId"":""{g(2)}"",""Filter"":null,""Output"":null}}],""AutoCalibrationRatio2"":100,""OutputMode"":1,""GlobalGain"":50.0,""UseProfileGain"":false,""Name"":""SlipLock Data Export"",""ProfileId"":""{g(3)}"",""GameCode"":null,""CarChoice"":null}}";
-                File.WriteAllText(p, j);
-                ProfileStatus = "Saved! Import in ShakeIT and restart.";
+                log.Error("Plugin class " + GetType().Name + " does not match the property prefix " + PropertyExporter.SimHubPrefix
+                    + ": existing ShakeIT profiles and dashboards will not find the properties.");
             }
-            catch (Exception ex) { ProfileStatus = $"Error: {ex.Message}"; }
-        }
-
-        public void GenerateHapticPedalProfile()
-        {
-            try
+            else if (pluginManager.GetPropertyValue(probe) == null)
             {
-                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "SimHub");
-                Directory.CreateDirectory(dir);
-                string path = Path.Combine(dir, "SlipLock_HapticPedals.siprofile");
-
-                string G() => Guid.NewGuid().ToString();
-
-                // Channel mapping: 0=throttle, 1=brake, 2=clutch (typical Simagic/SimNet layout)
-                // ch0=true,ch1=false,ch2=false → throttle only
-                // ch0=false,ch1=true,ch2=false → brake only
-                string ChMap(bool ch0, bool ch1, bool ch2)
-                {
-                    string c0 = ch0 ? "true" : "false", c1 = ch1 ? "true" : "false", c2 = ch2 ? "true" : "false";
-                    return "\"SettingsStore\":{\"Settings\":[{\"Channels\":{\"All\":{\"Channels\":{\"0\":{\"IsEnabled\":" + c0 + "},\"1\":{\"IsEnabled\":" + c1 + "},\"2\":{\"IsEnabled\":" + c2 + "}}}},\"TypeName\":\"DeviceChannelActivationSettings\"}]}";
-                }
-
-                // Motors custom effect using NCalc — reads pre-averaged mono export
-                string pfx = "SlipLockPropertiesCalc.";
-
-                string MotorEffect(string desc, string prop, bool throttleCh, bool brakeCh, int freq) =>
-$@"{{
-  ""ContainerType"":""CustomEffectContainer"",
-  ""IsEnabled"":true,
-  ""Gain"":100.0,
-  ""Description"":""{desc}"",
-  ""FrontLeftFormula"":{{""Expression"":""[{pfx}{prop}.Mono]""}},
-  ""FrontRightFormula"":{{""Expression"":""""}},
-  ""RearLeftFormula"":{{""Expression"":""""}},
-  ""RearRightFormula"":{{""Expression"":""""}},
-  ""ForceFrequencies"":false,
-  ""FrontLeftFrequencyFormula"":{{""Expression"":""""}},
-  ""FrontRightFrequencyFormula"":{{""Expression"":""""}},
-  ""RearLeftFrequencyFormula"":{{""Expression"":""""}},
-  ""RearRightFrequencyFormula"":{{""Expression"":""""}},
-  ""AlwaysExecute"":false,
-  {ChMap(throttleCh, brakeCh, false)},
-  ""ContainerId"":""{G()}"",
-  ""AggregationMode"":""Mono"",
-  ""Filter"":{{""GammaValue"":1.0,""InputGain"":100.0,""MinimumForce"":0,""Threshold"":0,""FilterType"":""GammaFilter""}},
-  ""Output"":{{""UseHighFrequency"":false,""HighFrequency"":50,""WhiteNoise"":10,""UseWhiteNoise"":false,""FrequencyBasedOnPreFilter"":false,""UsePrehemptiveMode"":false,""Frequency"":{freq},""OutputType"":""ToneOutput""}}
-}}";
-
-                // SlipTC aggregate → throttle pedal (channel 0)
-                string slipTC = MotorEffect("SlipTC Aggregate (throttle)", "SlipLock.SlipTC", true, false, 30);
-                // LockABS aggregate → brake pedal (channel 1)
-                string lockABS = MotorEffect("LockABS Aggregate (brake)", "SlipLock.LockABS", false, true, 25);
-                // Raw slip blend → throttle pedal (disabled by default, user can enable)
-                string slipBlend = MotorEffect("Slip*Throttle (throttle)", "SlipLock.SlipBlend", true, false, 30)
-                    .Replace("\"IsEnabled\":true", "\"IsEnabled\":false");
-                // Raw lock blend → brake pedal (disabled by default)
-                string lockBlend = MotorEffect("Lock*Brake (brake)", "SlipLock.LockBlend", false, true, 25)
-                    .Replace("\"IsEnabled\":true", "\"IsEnabled\":false");
-
-                string json = $@"{{
-  ""CarChoices"":[],
-  ""IncludeOutputSettingsInProfile"":false,
-  ""UnmuteEffectsAfterSimhubRestart"":true,
-  ""EffectsContainers"":[
-    {slipTC},
-    {lockABS},
-    {slipBlend},
-    {lockBlend}
-  ],
-  ""AutoCalibrationRatio2"":100,
-  ""OutputMode"":3,
-  ""GlobalGain"":50.0,
-  ""UseProfileGain"":false,
-  ""LastLoaded"":""0001-01-01T00:00:00"",
-  ""Name"":""SlipLock Haptic Pedals"",
-  ""ProfileId"":""{G()}"",
-  ""GameCode"":null,
-  ""CarChoice"":null
-}}";
-                File.WriteAllText(path, json);
-                ProfileStatus = "Haptic pedal profile saved! Import in ShakeIT Motors tab.";
-                SimHub.Logging.Current.Info($"SlipLock: Generated haptic pedal profile at {path}");
+                log.Error("Self-check failed: property " + probe + " is not readable after registration.");
             }
-            catch (Exception ex) { ProfileStatus = $"Error: {ex.Message}"; }
         }
-
-        // ==================== Init ====================
-        public void Init(PluginManager pm)
+        catch (Exception ex)
         {
-            SimHub.Logging.Current.Info("Starting SlipLock Plugin");
-            this.PluginManager = pm;
-            _logPath = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ".", "Logs", "SlipLock_debug.log");
-            try { Directory.CreateDirectory(Path.GetDirectoryName(_logPath)); File.WriteAllText(_logPath, $"=== SlipLock {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===\r\n"); } catch { _logPath = Path.Combine(Path.GetTempPath(), "SlipLock_debug.log"); }
-
-            Settings = this.ReadCommonSettings<SlipLockSettings>("GeneralSettings", () => new SlipLockSettings());
-            if (Settings.GameCapabilities == null) Settings.GameCapabilities = new Dictionary<string, GameCapabilities>();
-            _slipThrottleBlend = Settings.SlipThrottleBlend; _tcThrottleBlend = Settings.TCThrottleBlend;
-            _lockBrakeBlend = Settings.LockBrakeBlend; _absBrakeBlend = Settings.ABSBrakeBlend;
-            _slipThreshold = Settings.SlipThreshold; _lockThreshold = Settings.LockThreshold;
-            _tcThreshold = Settings.TCThreshold; _absThreshold = Settings.ABSThreshold;
-            _gateSlipOnThrottle = Settings.GateSlipOnThrottle; _gateLockOnBrake = Settings.GateLockOnBrake;
-            _slipAttackMs = Settings.SlipAttackMs; _slipReleaseMs = Settings.SlipReleaseMs;
-            _lockAttackMs = Settings.LockAttackMs; _lockReleaseMs = Settings.LockReleaseMs;
-            _absAttackMs = Settings.ABSAttackMs; _absReleaseMs = Settings.ABSReleaseMs;
-            _tcAttackMs = Settings.TCAttackMs; _tcReleaseMs = Settings.TCReleaseMs;
-
-            var t = this.GetType();
-            foreach (string w in W)
-            {
-                pm.AddProperty($"SlipLock.Slip.{w}", t, 0.0); pm.AddProperty($"SlipLock.Lock.{w}", t, 0.0);
-                pm.AddProperty($"SlipLock.ABS.{w}", t, 0.0); pm.AddProperty($"SlipLock.TC.{w}", t, 0.0);
-                pm.AddProperty($"SlipLock.SlipBlend.{w}", t, 0.0); pm.AddProperty($"SlipLock.LockBlend.{w}", t, 0.0);
-                pm.AddProperty($"SlipLock.SlipTC.{w}", t, 0.0); pm.AddProperty($"SlipLock.LockABS.{w}", t, 0.0);
-            }
-            // Mono averages (for haptic pedals — single value per channel)
-            pm.AddProperty("SlipLock.Slip.Mono", t, 0.0); pm.AddProperty("SlipLock.Lock.Mono", t, 0.0);
-            pm.AddProperty("SlipLock.ABS.Mono", t, 0.0); pm.AddProperty("SlipLock.TC.Mono", t, 0.0);
-            pm.AddProperty("SlipLock.SlipBlend.Mono", t, 0.0); pm.AddProperty("SlipLock.LockBlend.Mono", t, 0.0);
-            pm.AddProperty("SlipLock.SlipTC.Mono", t, 0.0); pm.AddProperty("SlipLock.LockABS.Mono", t, 0.0);
-            pm.AddProperty("SlipLock.MaxSway", t, 5.0); pm.AddProperty("SlipLock.MaxSurge", t, 5.0); pm.AddProperty("SlipLock.MaxDecel", t, 5.0);
-            SimHub.Logging.Current.Info("SlipLock Plugin initialized");
+            log.Warn("Property self-check could not run: " + ex.Message);
         }
+    }
 
-        // ==================== DataUpdate ====================
-        public void DataUpdate(PluginManager pm, ref GameData data)
+    /// <summary>
+    /// Called once per SimHub data frame (60+ Hz) on the data thread. Allocation-free in steady state; never throws.
+    /// </summary>
+    public void DataUpdate(PluginManager pluginManager, ref GameData data)
+    {
+        long startTicks = clock.ElapsedTicks;
+        double now = clock.Elapsed.TotalSeconds;
+        dataThreadId = Thread.CurrentThread.ManagedThreadId;
+
+        // Each command is guarded individually inside.
+        DrainCommands(now);
+
+        bool running = false;
+        try
         {
-            try
+            FrameContextBuilder.Fill(ctx, data, now);
+            if (ctx.GameRunning)
             {
-                if (!data.GameRunning || data.NewData == null) { SlipSource = "No game"; IsDetecting = false; return; }
-
-                string game = data.GameName ?? "";
-                if (game != _lastGame)
-                {
-                    _lastGame = game; _det = DetState.Loading; _dynFrames = 0;
-                    _absEver = false; _tcEver = false; _wsProps = null; _slipProps = null; _hasLMURotation = false; _scanned = false; _selfProbed = false;
-                    _preset = GamePresets.Table.ContainsKey(game) ? GamePresets.Table[game] : GamePresets.Default;
-                    ActivePreset = GamePresets.Table.ContainsKey(game) ? game : "Default";
-                }
-                CurrentGame = game;
-                string carId = data.NewData.CarId ?? "N/A";
-                if (carId != CurrentCarId && !string.IsNullOrEmpty(carId) && carId != "N/A") { MaxSway = 5; MaxSurge = 5; MaxDecel = 5; CurrentCarId = carId; }
-                if (!_scanned) { _scanned = true; ScanProps(pm); }
-
-                // Self-probe: find what prefix SimHub uses for our properties
-                if (!_selfProbed)
-                {
-                    _selfProbed = true;
-                    string testProp = "SlipLock.MaxSway";
-                    string[] prefixes = { "", "SlipLockPropertiesCalc.", "User.SlipLockPropertiesCalc.SlipLockPropertiesCalc.", "DataCorePlugin.GameData." };
-                    var sb = new StringBuilder("=== SELF-PROBE ===");
-                    foreach (var pfx in prefixes)
-                    {
-                        var v = pm.GetPropertyValue(pfx + testProp);
-                        sb.Append($"\r\n  [{pfx}{testProp}] = {(v == null ? "NULL" : v)}");
-                        if (v != null && _propPrefix == "") _propPrefix = pfx;
-                    }
-                    sb.Append($"\r\n  RESOLVED PREFIX: '{_propPrefix}'");
-                    Log(sb.ToString(), true);
-                }
-
-                double throttle = data.NewData.Throttle, brake = data.NewData.Brake;
-                double sway = data.NewData.AccelerationSway ?? 0, surge = data.NewData.AccelerationSurge ?? 0;
-                double vs = data.NewData.SpeedKmh / 3.6;
-                bool absActive = data.NewData.ABSActive > 0, tcActive = data.NewData.TCActive > 0;
-
-                double tcLevel = -1, absLevel = -1; bool gExpTC = false, gExpABS = false;
-                try { var v = pm.GetPropertyValue("DataCorePlugin.GameData.TCLevel"); if (v != null) { tcLevel = Convert.ToDouble(v); gExpTC = true; } } catch { }
-                try { var v = pm.GetPropertyValue("DataCorePlugin.GameData.ABSLevel"); if (v != null) { absLevel = Convert.ToDouble(v); gExpABS = true; } } catch { }
-
-                UpdMax(pm, sway, surge);
-                if (absActive) _absEver = true;
-                if (tcActive) _tcEver = true;
-                PersistDetection();
-                ProbeSlip(pm);
-
-                // Capability display
-                GameExportsABS = gExpABS ? "Yes" : "No"; GameExportsTC = gExpTC ? "Yes" : "No";
-                CarHasABS = _absEver ? "Yes" : (gExpABS ? "Unknown" : "No data");
-                CarHasTC = _tcEver ? "Yes" : (gExpTC ? "Unknown" : "No data");
-                ABSEnabled = !gExpABS ? "N/A" : (absLevel > 0 ? $"Yes (lvl {absLevel:F0})" : "Off");
-                TCEnabled = !gExpTC ? "N/A" : (tcLevel > 0 ? $"Yes (lvl {tcLevel:F0})" : "Off");
-
-                // Fixed aggregate decision
-                bool aggUsesTC = gExpTC && tcLevel > 0;
-                bool aggUsesABS = gExpABS && absLevel > 0;
-
-                var t = this.GetType();
-                double tN = throttle / 100, bN = brake / 100;
-
-                // ===== PREPROCESSOR: get raw base + apply proxyL + normalize =====
-                double[] rawSlip = GetBaseSlip(pm, data, vs, sway, brake);
-                bool perW = _det == DetState.PerWheel;
-                IsBaseMono = !perW; IsBasePerWheel = perW;
-
-                // Base display
-                BaseSlipMono = rawSlip[0]; BaseLockMono = _preset.SynthLockFromSlip && brake > 5 && surge > 0.1 ? rawSlip[0] : 0;
-                BaseABSMono = absActive ? 1.0 : 0; BaseTCMono = tcActive ? 1.0 : 0;
-                BaseSlipFL = rawSlip[0]; BaseSlipFR = rawSlip[1]; BaseSlipRL = rawSlip[2]; BaseSlipRR = rawSlip[3];
-
-                // Compute proxyL loads for each channel type
-                double[] slipL = CalcL(sway, surge, _preset.SlipLat / 100, _preset.SlipLong / 100);
-                double[] lockL = CalcL(sway, surge, _preset.LockLat / 100, _preset.LockLong / 100);
-                double[] absL = CalcL(sway, surge, _preset.ABSLat / 100, _preset.ABSLong / 100);
-                double[] tcL = CalcL(sway, surge, _preset.TCLat / 100, _preset.TCLong / 100);
-
-                // Display slip loads
-                LoadFL = slipL[0]; LoadFR = slipL[1]; LoadRL = slipL[2]; LoadRR = slipL[3];
-
-                // Speed fade: linearly reduce slip/lock below preset speed threshold
-                double speedFade = 1.0;
-                if (_preset.SpeedFadeKmh > 0)
-                {
-                    double speedKmh = data.NewData.SpeedKmh;
-                    speedFade = Math.Min(1.0, Math.Max(0, speedKmh / _preset.SpeedFadeKmh));
-                }
-
-                // Apply proxyL and normalize
-                double[] slip = new double[4], lockV = new double[4], absV = new double[4], tcV = new double[4];
-                for (int i = 0; i < 4; i++)
-                {
-                    // Slip: positive direction, load-adjusted, speed-faded
-                    double slipRaw = Math.Max(0, rawSlip[i]);
-                    if (_preset.InverseSlipLoad)
-                        // Inverse: divide by load to counteract load-dependent slip in rotation-based data
-                        // load range 0-50, neutral=25. Inverse: 25/load, so loaded wheel (35) gets reduced, unloaded (15) gets boosted
-                        slip[i] = Norm(slipRaw * 25.0 / Math.Max(1, slipL[i]) * speedFade);
-                    else
-                        slip[i] = Norm(slipRaw * slipL[i] / 25.0 * speedFade);
-
-                    // Lock: either synthesized from slip (iRacing) or negative direction, speed-faded
-                    if (_preset.SynthLockFromSlip)
-                        lockV[i] = (brake > 5 && surge > 0.1) ? Norm(Math.Max(0, rawSlip[i]) * lockL[i] / 25.0 * speedFade) : 0;
-                    else
-                        lockV[i] = Norm(Math.Abs(Math.Min(0, rawSlip[i])) * lockL[i] / 25.0 * speedFade);
-
-                    // ABS: mono flag → 100 when active → distributed by proxyL → normalized
-                    absV[i] = absActive ? Norm(100.0 * absL[i] / 25.0) : 0;
-
-                    // TC: mono flag → 100 when active → distributed by proxyL → normalized
-                    tcV[i] = tcActive ? Norm(100.0 * tcL[i] / 25.0) : 0;
-                }
-
-                // Preprocessor gain + cut (applied to slip and lock only, ABS/TC are binary-derived)
-                if (_preset.PreCut > 0 || _preset.PreGain < 100)
-                {
-                    double gain = _preset.PreGain / 100.0;
-                    double cut = _preset.PreCut;
-                    for (int i = 0; i < 4; i++)
-                    {
-                        // Apply gain first, then cut with remap
-                        slip[i] = slip[i] * gain;
-                        slip[i] = slip[i] <= cut ? 0 : (slip[i] - cut) / (100.0 - cut) * 100.0;
-                        slip[i] = Norm(slip[i]);
-
-                        lockV[i] = lockV[i] * gain;
-                        lockV[i] = lockV[i] <= cut ? 0 : (lockV[i] - cut) / (100.0 - cut) * 100.0;
-                        lockV[i] = Norm(lockV[i]);
-                    }
-                }
-
-                // Log preprocessor output
-                Log($"PREPROC slip=[{slip[0]:F2},{slip[1]:F2},{slip[2]:F2},{slip[3]:F2}] lock=[{lockV[0]:F2},{lockV[1]:F2},{lockV[2]:F2},{lockV[3]:F2}] loads=[{slipL[0]:F1},{slipL[1]:F1},{slipL[2]:F1},{slipL[3]:F1}]");
-                // Display preprocessor output (rounded)
-                SlipFL = R(slip[0]); SlipFR = R(slip[1]); SlipRL = R(slip[2]); SlipRR = R(slip[3]);
-                LockFL = R(lockV[0]); LockFR = R(lockV[1]); LockRL = R(lockV[2]); LockRR = R(lockV[3]);
-                ABSFL = R(absV[0]); ABSFR = R(absV[1]); ABSRL = R(absV[2]); ABSRR = R(absV[3]);
-                TCFL = R(tcV[0]); TCFR = R(tcV[1]); TCRL = R(tcV[2]); TCRR = R(tcV[3]);
-                for (int i = 0; i < 4; i++)
-                {
-                    pm.SetPropertyValue($"SlipLock.Slip.{W[i]}", t, R(slip[i]));
-                    pm.SetPropertyValue($"SlipLock.Lock.{W[i]}", t, R(lockV[i]));
-                    pm.SetPropertyValue($"SlipLock.ABS.{W[i]}", t, R(absV[i]));
-                    pm.SetPropertyValue($"SlipLock.TC.{W[i]}", t, R(tcV[i]));
-                }
-                pm.SetPropertyValue("SlipLock.Slip.Mono", t, R((slip[0]+slip[1]+slip[2]+slip[3])/4));
-                pm.SetPropertyValue("SlipLock.Lock.Mono", t, R((lockV[0]+lockV[1]+lockV[2]+lockV[3])/4));
-                pm.SetPropertyValue("SlipLock.ABS.Mono", t, R((absV[0]+absV[1]+absV[2]+absV[3])/4));
-                pm.SetPropertyValue("SlipLock.TC.Mono", t, R((tcV[0]+tcV[1]+tcV[2]+tcV[3])/4));
-
-                // ===== POSTPROCESSOR =====
-
-                // Thresholds
-                for (int i = 0; i < 4; i++)
-                {
-                    slip[i] = Thresh(slip[i], _slipThreshold);
-                    lockV[i] = Thresh(lockV[i], _lockThreshold);
-                    absV[i] = Thresh(absV[i], _absThreshold);
-                    tcV[i] = Thresh(tcV[i], _tcThreshold);
-                }
-
-                // Gates
-                bool slipGated = _gateSlipOnThrottle && throttle <= 0;
-                bool lockGated = _gateLockOnBrake && brake <= 0;
-                if (slipGated) for (int i = 0; i < 4; i++) { slip[i] = 0; tcV[i] = 0; }
-                if (lockGated) for (int i = 0; i < 4; i++) { lockV[i] = 0; absV[i] = 0; }
-
-                // Envelope shaping
-                var now = DateTime.Now;
-                double dt = _lastFrameTime == DateTime.MinValue ? 0.016 : (now - _lastFrameTime).TotalSeconds;
-                _lastFrameTime = now;
-                dt = Math.Max(0.001, Math.Min(0.1, dt));
-
-                for (int i = 0; i < 4; i++)
-                {
-                    slip[i] = ApplyEnvelope(ref _envSlip[i], slip[i], dt, _slipAttackMs, _slipReleaseMs);
-                    lockV[i] = ApplyEnvelope(ref _envLock[i], lockV[i], dt, _lockAttackMs, _lockReleaseMs);
-                    absV[i] = ApplyEnvelope(ref _envABS[i], absV[i], dt, _absAttackMs, _absReleaseMs);
-                    tcV[i] = ApplyEnvelope(ref _envTC[i], tcV[i], dt, _tcAttackMs, _tcReleaseMs);
-                }
-
-                // 4 separate pedal blends
-                double stB = _slipThrottleBlend / 100, tcB = _tcThrottleBlend / 100;
-                double lbB = _lockBrakeBlend / 100, abB = _absBrakeBlend / 100;
-                double[] slipB = new double[4], lockB = new double[4];
-                for (int i = 0; i < 4; i++)
-                {
-                    slipB[i] = R(slip[i] * (1 - stB) + slip[i] * tN * stB);
-                    lockB[i] = R(lockV[i] * (1 - lbB) + lockV[i] * bN * lbB);
-                    pm.SetPropertyValue($"SlipLock.SlipBlend.{W[i]}", t, slipB[i]);
-                    pm.SetPropertyValue($"SlipLock.LockBlend.{W[i]}", t, lockB[i]);
-                }
-                SlipBFL = slipB[0]; SlipBFR = slipB[1]; SlipBRL = slipB[2]; SlipBRR = slipB[3];
-                LockBFL = lockB[0]; LockBFR = lockB[1]; LockBRL = lockB[2]; LockBRR = lockB[3];
-                pm.SetPropertyValue("SlipLock.SlipBlend.Mono", t, R((slipB[0]+slipB[1]+slipB[2]+slipB[3])/4));
-                pm.SetPropertyValue("SlipLock.LockBlend.Mono", t, R((lockB[0]+lockB[1]+lockB[2]+lockB[3])/4));
-
-                // Fixed aggregates
-                double[] aggS = new double[4], aggL = new double[4];
-                for (int i = 0; i < 4; i++)
-                {
-                    if (aggUsesTC)
-                        aggS[i] = R(tcV[i] * (1 - tcB) + tcV[i] * tN * tcB);
-                    else
-                        aggS[i] = slipB[i];
-
-                    if (aggUsesABS)
-                        aggL[i] = R(absV[i] * (1 - abB) + absV[i] * bN * abB);
-                    else
-                        aggL[i] = lockB[i];
-
-                    pm.SetPropertyValue($"SlipLock.SlipTC.{W[i]}", t, aggS[i]);
-                    pm.SetPropertyValue($"SlipLock.LockABS.{W[i]}", t, aggL[i]);
-                }
-                AggSFL = aggS[0]; AggSFR = aggS[1]; AggSRL = aggS[2]; AggSRR = aggS[3];
-                AggLFL = aggL[0]; AggLFR = aggL[1]; AggLRL = aggL[2]; AggLRR = aggL[3];
-                pm.SetPropertyValue("SlipLock.SlipTC.Mono", t, R((aggS[0]+aggS[1]+aggS[2]+aggS[3])/4));
-                pm.SetPropertyValue("SlipLock.LockABS.Mono", t, R((aggL[0]+aggL[1]+aggL[2]+aggL[3])/4));
-
-                // Fixed mode labels
-                SlipTCMode = aggUsesTC ? "TC" : "Slip";
-                LockABSMode = aggUsesABS ? "ABS" : "Lock";
-                AggregateSlipUsing = aggUsesTC ? $"TC (lvl {tcLevel:F0})" : (gExpTC ? "Slip (TC off)" : "Slip (no TC)");
-                AggregateLockUsing = aggUsesABS ? $"ABS (lvl {absLevel:F0})" : (gExpABS ? "Lock (ABS off)" : "Lock (no ABS)");
-
-                pm.SetPropertyValue("SlipLock.MaxSway", t, MaxSway);
-                pm.SetPropertyValue("SlipLock.MaxSurge", t, MaxSurge);
-                pm.SetPropertyValue("SlipLock.MaxDecel", t, MaxDecel);
-            }
-            catch (Exception ex) { SimHub.Logging.Current.Error($"SlipLock error: {ex.Message}\n{ex.StackTrace}"); }
-        }
-
-        // ==================== ProxyL ====================
-        private double[] CalcL(double sway, double surge, double latI, double longI)
-        {
-            double nL = Math.Min(100, Math.Abs(sway) / Math.Max(MaxSway, 0.1) * 100) * latI;
-            double nG = Math.Min(100, Math.Abs(surge) / Math.Max(MaxSurge, 0.1) * 100) * longI;
-            var r = new double[4];
-            for (int i = 0; i < 4; i++)
-            {
-                double la = (sway < 0) == (LatSign[i] < 0) ? nL : -nL;
-                double lo = (surge > 0) == (LongSign[i] > 0) ? nG : -nG;
-                r[i] = 25 + 25 * la / 100; r[i] += r[i] * lo / 100;
-                r[i] = Math.Max(0, Math.Min(50, r[i]));
-            }
-            return r;
-        }
-
-        private static double Norm(double v) => Math.Max(0, Math.Min(100, v));
-        private static double Thresh(double v, double t) => v <= t ? 0 : (v - t) / (100 - t) * 100;
-        private static double R(double v) => Math.Round(v, 1); // round to 1 decimal for clean export
-
-        private static double ApplyEnvelope(ref double state, double target, double dt, double attackMs, double releaseMs)
-        {
-            if (target >= state)
-            {
-                // Attack: constant rate (fast ramp up)
-                if (attackMs < 1) { state = target; }
-                else
-                {
-                    double rate = 1.0 - Math.Exp(-dt / (attackMs / 1000.0));
-                    state += (target - state) * rate;
-                }
+                PrepareFrame(now);
+                running = true;
             }
             else
             {
-                // Release: concave curve — slow linger at top, fast snap at bottom
-                // Scale releaseMs by (state/100)^0.5 so low values decay faster
-                double level = Math.Max(0.01, state / 100.0);
-                double effectiveMs = releaseMs * Math.Sqrt(level); // sqrt: gentle curve
-                if (effectiveMs < 1) { state = target; }
-                else
-                {
-                    double rate = 1.0 - Math.Exp(-dt / (effectiveMs / 1000.0));
-                    state += (target - state) * rate;
-                }
+                HandleGameNotRunning();
             }
-            // Let the concave curve handle the final approach naturally
-            // Only snap truly negligible values to avoid float dust
-            if (state < 0.001) state = 0;
-            return Math.Max(0, Math.Min(100, state));
         }
-
-        // ==================== Base Slip (detection) ====================
-        private double[] GetBaseSlip(PluginManager pm, GameData d, double vs, double sway, double brake)
+        catch (Exception ex)
         {
-            var r = new double[4];
-            if (_retestReq) { _retestReq = false; _det = DetState.Detecting; _dynFrames = 0; _wsProps = null; if (!string.IsNullOrEmpty(_lastGame) && Settings.GameCapabilities.ContainsKey(_lastGame)) Settings.GameCapabilities.Remove(_lastGame); }
-            if (_det == DetState.Loading)
-            {
-                if (!string.IsNullOrEmpty(_lastGame) && Settings.GameCapabilities.ContainsKey(_lastGame))
-                { var c = Settings.GameCapabilities[_lastGame]; _det = c.WheelSpeedMode == "PerWheel" ? DetState.PerWheel : c.WheelSpeedMode == "Mono" ? DetState.Mono : DetState.Detecting; _absEver = c.ABSMode == "Available"; _tcEver = c.TCMode == "Available"; }
-                else { _det = DetState.Detecting; _dynFrames = 0; }
-            }
-            var ws = new double[4]; bool hasWS = TryWS(pm, ws);
-            var ss = new double[4]; bool hasSI = TrySI(pm, ss);
-            // Try LMU rotation-based slip if standard sources failed
-            bool hasLMU = false;
-            if (!hasSI) { hasLMU = TryReadLMUSlip(pm, ss, vs); }
-            bool hasAnySlip = hasSI || hasLMU;
-            // Log raw slip values every second for debugging
-            if (hasAnySlip) Log($"RAW slip[{_slipSourceType}]: [{ss[0]:F4},{ss[1]:F4},{ss[2]:F4},{ss[3]:F4}] speed={vs:F1} brake={brake:F0} surge={sway:F2}");
-            ShakeITStatus = hasSI ? "Available" : (hasLMU ? "N/A (LMU native)" : "Not found");
-
-            if (_det == DetState.Detecting)
-            {
-                IsDetecting = true;
-                bool sp = vs > 5, co = Math.Abs(sway) > 0.3, br = brake > 10, dy = sp && (co || br);
-                DetectSpeedCond = sp ? $"OK {vs:F1}" : $"-- {vs:F1}"; DetectCornerCond = co ? $"OK {Math.Abs(sway):F2}G" : $"-- {Math.Abs(sway):F2}G"; DetectBrakeCond = br ? $"OK {brake:F0}%" : $"-- {brake:F0}%";
-                if (!hasWS) { Save("Mono"); _det = DetState.Mono; DetectionStatus = "No wheel speed"; }
-                else if (dy) { double md = 0; for (int i = 1; i < 4; i++) md = Math.Max(md, Math.Abs(ws[i] - ws[0])); if (md > 0.05) { Save("PerWheel"); _det = DetState.PerWheel; DetectionStatus = $"PerWheel (d={md:F3})"; } else { _dynFrames++; DetectionStatus = $"Testing ({_dynFrames}/60)"; if (_dynFrames >= 60) { Save("Mono"); _det = DetState.Mono; DetectionStatus = "Mono"; } } }
-                else DetectionStatus = "Drive + corner/brake...";
-                for (int i = 0; i < 4; i++) r[i] = hasAnySlip ? ss[i] : 0;
-                SlipSource = hasAnySlip ? $"{_slipSourceType} (detecting)" : "Detecting..."; PerWheelSupport = "Detecting..."; return r;
-            }
-            if (_det == DetState.PerWheel) { IsDetecting = false; PerWheelSupport = "Per-Wheel"; SlipSource = "Per-Wheel"; if (hasWS && vs > 1) for (int i = 0; i < 4; i++) r[i] = Math.Max(-100, Math.Min(100, (ws[i] - vs) / vs * 100)); return r; }
-            IsDetecting = false; PerWheelSupport = hasLMU ? "Per-Wheel" : "Mono"; SlipSource = hasAnySlip ? _slipSourceType : "No data"; if (hasAnySlip) for (int i = 0; i < 4; i++) r[i] = ss[i]; return r;
+            ReportError(ex, now);
+            ClearAllOutputs();
         }
 
-        // ==================== Helpers ====================
-        private void ScanProps(PluginManager pm) { var sb = new StringBuilder("=== SCAN ==="); foreach (var p in new[] {
-            "ShakeITBSV3Plugin.Export.WheelSlip.FrontLeft", "ShakeITBSV3Plugin.Export.WheelLock.FrontLeft",
-            "DataCorePlugin.GameRawData.Telemetry.LFspeed", "LFspeed",
-            // ACC
-            "DataCorePlugin.GameRawData.Physics.WheelSlip01", "DataCorePlugin.GameRawData.Physics.WheelSlip02",
-            "DataCorePlugin.GameRawData.Physics.WheelAngularSpeed01",
-            // LMU / rF2
-            "DataCorePlugin.GameRawData.CurrentPlayerTelemetry.mWheels01.mGripFract",
-            "DataCorePlugin.GameRawData.CurrentPlayerTelemetry.mWheels01.mRotation",
-            "DataCorePlugin.GameRawData.CurrentPlayerTelemetry.mWheels01.mStaticUndeflectedRadius",
-            "DataCorePlugin.GameRawData.CurrentPlayerTelemetry.mWheels01.mTireLoad",
-            // Common
-            "DataCorePlugin.GameData.ABSActive", "DataCorePlugin.GameData.TCActive",
-            "DataCorePlugin.GameData.TCLevel", "DataCorePlugin.GameData.ABSLevel"
-        }) { var v = pm.GetPropertyValue(p); sb.Append($"\r\n  {p}={v ?? "NULL"}"); } Log(sb.ToString(), true); }
-        private void ProbeSlip(PluginManager pm)
+        if (running)
         {
-            if (_slipProps == null && !_hasLMURotation)
+            try
             {
-                // Try standard slip sources first (ACC native, ShakeIT)
-                var r = Res(pm, SlipV);
-                if (r != null)
-                {
-                    _slipProps = r;
-                    if (r[0].Contains("ShakeIT")) _slipSourceType = "ShakeIT";
-                    else if (r[0].Contains("Physics.WheelSlip")) _slipSourceType = "ACC-native";
-                    else _slipSourceType = r[0];
-                    Log($"Slip resolved: {_slipSourceType} [{string.Join(", ", r)}]", true);
-                    return;
-                }
+                ProcessSlipLock(now);
+            }
+            catch (Exception ex)
+            {
+                ReportError(ex, now);
+                outputs.Clear();
+                processor.Reset();
+            }
 
-                // Try LMU/rF2 mRotation as fallback
-                bool allRot = true;
-                for (int i = 0; i < 4; i++)
-                {
-                    var v = pm.GetPropertyValue(LMURotationProps[i]);
-                    if (v == null) { allRot = false; break; }
-                }
-                if (allRot)
-                {
-                    _hasLMURotation = true;
-                    _slipSourceType = "rF2/LMU-rotation";
-                    // Try to read tire radii
-                    for (int i = 0; i < 4; i++)
-                    {
-                        _tireRadii[i] = 0.33; // default ~330mm
-                        try
-                        {
-                            var v = pm.GetPropertyValue(LMURadiusProps[i]);
-                            if (v != null)
-                            {
-                                double raw = Convert.ToDouble(v);
-                                // rF2/LMU reports radius in cm, convert to meters
-                                _tireRadii[i] = raw > 1.0 ? raw / 100.0 : raw;
-                            }
-                        }
-                        catch { }
-                    }
-                    Log($"Slip resolved: rF2/LMU-rotation radii=[{_tireRadii[0]:F3},{_tireRadii[1]:F3},{_tireRadii[2]:F3},{_tireRadii[3]:F3}]", true);
-                }
+            try
+            {
+                ProcessBalance(now);
+            }
+            catch (Exception ex)
+            {
+                ReportError(ex, now);
+                ResetBalanceAfterError(now);
+            }
+
+            try
+            {
+                WriteDebugLog(now);
+            }
+            catch (Exception ex)
+            {
+                ReportError(ex, now);
             }
         }
 
-        private bool TryReadLMUSlip(PluginManager pm, double[] r, double vehicleSpeed)
+        try
         {
-            if (!_hasLMURotation) return false;
-            if (vehicleSpeed < 1.0) { for (int i = 0; i < 4; i++) r[i] = 0; return true; }
-            for (int i = 0; i < 4; i++)
-            {
-                var v = pm.GetPropertyValue(LMURotationProps[i]);
-                if (v == null) return false;
-                try
-                {
-                    double rotRadPerSec = Convert.ToDouble(v);
-                    double wheelSpeed = Math.Abs(rotRadPerSec) * _tireRadii[i]; // linear speed m/s
-                    r[i] = (wheelSpeed - vehicleSpeed) / vehicleSpeed * 100.0;
-                    r[i] = Math.Max(-100, Math.Min(100, r[i]));
-                }
-                catch { return false; }
-            }
-            return true;
+            scheduler.Tick(now);
         }
-        private string[] Res(PluginManager pm, string[][] v) { var r = new string[4]; for (int i = 0; i < 4; i++) { bool f = false; foreach (var n in v[i]) if (pm.GetPropertyValue(n) != null) { r[i] = n; f = true; break; } if (!f) return null; } return r; }
-        private bool TryWS(PluginManager pm, double[] r) { if (_wsProps == null) { var x = Res(pm, WheelSpeedV); if (x != null) _wsProps = x; else return false; } for (int i = 0; i < 4; i++) { var v = pm.GetPropertyValue(_wsProps[i]); if (v == null) return false; try { r[i] = Convert.ToDouble(v); } catch { return false; } } return true; }
-        private bool TrySI(PluginManager pm, double[] r)
+        catch (Exception ex)
         {
-            if (_slipProps == null) return false;
-            for (int i = 0; i < 4; i++)
-            {
-                var v = pm.GetPropertyValue(_slipProps[i]);
-                if (v == null) return false;
-                try { r[i] = Convert.ToDouble(v); } catch { return false; }
-            }
-            // Normalize to 0-100 scale based on source type
-            if (_slipSourceType == "rF2/LMU-native")
-            {
-                // mGripFract: 0-1 fraction (0=no slide, 1=full slide)
-                for (int i = 0; i < 4; i++) r[i] = r[i] * 100.0;
-            }
-            else if (_slipSourceType == "ACC-native")
-            {
-                // ACC WheelSlip: can range 0-~5+ (ratio), scale to 0-100
-                for (int i = 0; i < 4; i++) r[i] = Math.Min(100, r[i] * 20.0);
-            }
-            // ShakeIT: already 0-100 range (SimHub normalizes it)
-            return true;
+            ReportError(ex, now);
         }
-        private void Save(string m) { if (string.IsNullOrEmpty(_lastGame)) return; if (!Settings.GameCapabilities.ContainsKey(_lastGame)) Settings.GameCapabilities[_lastGame] = new GameCapabilities(); Settings.GameCapabilities[_lastGame].WheelSpeedMode = m; this.SaveCommonSettings("GeneralSettings", Settings); }
-        private void PersistDetection() { if (string.IsNullOrEmpty(_lastGame) || !Settings.GameCapabilities.ContainsKey(_lastGame)) return; var c = Settings.GameCapabilities[_lastGame]; bool ch = false; if (_absEver && c.ABSMode != "Available") { c.ABSMode = "Available"; ch = true; } if (_tcEver && c.TCMode != "Available") { c.TCMode = "Available"; ch = true; } if (ch) this.SaveCommonSettings("GeneralSettings", Settings); }
-        private void UpdMax(PluginManager pm, double sw, double su) { double s = Math.Abs(sw); if (s > MaxSway && s < MaxSway + 5) MaxSway = s; if (su > MaxSurge && su < MaxSurge + 5) MaxSurge = su; double d = -su; if (d > MaxDecel && d < MaxDecel + 5) MaxDecel = d; }
-        public void End(PluginManager pm) { this.SaveCommonSettings("GeneralSettings", Settings); }
-        public Control GetWPFSettingsControl(PluginManager pm) => new SettingsControl(this);
+
+        try
+        {
+            UpdateSnapshot(now);
+        }
+        catch (Exception ex)
+        {
+            ReportError(ex, now);
+        }
+
+        frameCount++;
+        double elapsedMs = (clock.ElapsedTicks - startTicks) * 1000.0 / Stopwatch.Frequency;
+        dataUpdateMs += (elapsedMs - dataUpdateMs) * TimingSmoothing;
+    }
+
+    /// <summary>Called at plugin manager stop: saves everything synchronously and stops background work.</summary>
+    public void End(PluginManager pluginManager)
+    {
+        try
+        {
+            // SimHub no longer calls DataUpdate: apply what the UI queued last (an import, a slider edit).
+            DrainCommands(clock.Elapsed.TotalSeconds);
+            recorder?.Dispose();
+            if (profile != null && !IsIdentityProvisional(clock.Elapsed.TotalSeconds))
+            {
+                estimator.SaveTo(profile);
+                store.Save(profile); // synchronous; supersedes anything still queued for this car
+            }
+
+            scheduler?.DiscardProfileChanges();
+            settingsWriter?.Save(Settings); // synchronous; supersedes a queued asynchronous save
+            store?.WaitForPendingWrites(ShutdownWriteTimeout);
+            settingsWriter?.WaitForPendingWrites(ShutdownWriteTimeout);
+            log?.Info("Plugin stopped");
+        }
+        catch (Exception ex)
+        {
+            log?.Error("End failed: " + ex);
+        }
+    }
+
+    /// <summary>Returns the settings page.</summary>
+    public System.Windows.Controls.Control GetWPFSettingsControl(PluginManager pluginManager) =>
+        new SettingsControl(new SettingsViewModel(this));
+
+    // =====================================================================================================
+    // Per-frame processing (data thread)
+    // =====================================================================================================
+
+    /// <summary>Game, car and session changes (rare paths; allocations are fine there).</summary>
+    private void PrepareFrame(double now)
+    {
+        wasRunning = true;
+        if (!gameKnown || !string.Equals(ctx.GameName, lastGame, StringComparison.Ordinal))
+        {
+            OnGameChanged();
+        }
+
+        UpdateCar(now);
+        UpdateSession();
+    }
+
+    /// <summary>The v1 slip/lock pipeline (order: max G, capabilities, slip source, base slip, processor).</summary>
+    private void ProcessSlipLock(double now)
+    {
+        maxG.Update(ctx.Sway, ctx.Surge);
+        capabilities.Update(reader, ctx.AbsActive, ctx.TcActive);
+        if (slipResolver.Probe(reader, now))
+        {
+            LogSlipResolution();
+        }
+
+        detector.ComputeBaseSlip(reader, ctx.SpeedKmh / KmhPerMs, ctx.Sway, ctx.Brake, now, inputs.BaseSlip);
+        inputs.BaseSlipIsSigned = detector.BaseSlipIsSigned;
+        inputs.HasShakeItLock = slipResolver.ReadWheelLock(reader, inputs.ShakeItLock);
+        if (detector.SettingsChanged || capabilities.SettingsChanged)
+        {
+            scheduler.MarkSettingsDirty(now);
+            detector.ClearSettingsChanged();
+            capabilities.ClearSettingsChanged();
+        }
+
+        inputs.WallTime = now;
+        inputs.Throttle = ctx.Throttle;
+        inputs.Brake = ctx.Brake;
+        inputs.Sway = ctx.Sway;
+        inputs.Surge = ctx.Surge;
+        inputs.SpeedKmh = ctx.SpeedKmh;
+        inputs.AbsActive = ctx.AbsActive;
+        inputs.TcActive = ctx.TcActive;
+        inputs.GameExportsAbs = capabilities.GameExportsAbs;
+        inputs.GameExportsTc = capabilities.GameExportsTc;
+        inputs.AbsLevel = capabilities.AbsLevel;
+        inputs.TcLevel = capabilities.TcLevel;
+
+        Settings.CopyTo(tuning);
+        CarProfile car = profile;
+        tuning.SlipSensitivity = car != null ? car.SlipSensitivity / PercentScale : 1.0;
+        tuning.LockSensitivity = car != null ? car.LockSensitivity / PercentScale : 1.0;
+        processor.Process(inputs, preset, tuning, maxG, outputs);
+    }
+
+    /// <summary>Understeer/oversteer estimation, recording and learner persistence marks.</summary>
+    private void ProcessBalance(double now)
+    {
+        balanceSource.Read(ctx, reader, vehicleState);
+        estimator.Update(vehicleState);
+        recorder.Record(vehicleState, estimator.Outputs); // no-op while not recording
+        if (estimator.LearnerDirty)
+        {
+            scheduler.MarkProfileDirty(now);
+        }
+
+        if (estimator.CalibrationChanged)
+        {
+            scheduler.MarkSettingsDirty(now);
+            estimator.ClearCalibrationChanged();
+        }
+    }
+
+    /// <summary>Optional 1 Hz debug file log (the rate check comes before any formatting).</summary>
+    private void WriteDebugLog(double now)
+    {
+        if (debugLog.IsDue(Settings.DebugFileLog, now))
+        {
+            debugLog.WriteScanIfPending(reader, ctx.GameName, presetName, balanceSource.Name);
+            debugLog.WriteFrame(ctx, inputs, outputs, detector.EffectiveSource, estimator.Outputs);
+        }
+    }
+
+    /// <summary>A stage failed before the slip/lock and balance stages could run: zero every export.</summary>
+    private void ClearAllOutputs()
+    {
+        try
+        {
+            outputs.Clear();
+            processor.Reset();
+            estimator.Reset();
+        }
+        catch
+        {
+            // Error path: must not throw out of DataUpdate.
+        }
+    }
+
+    /// <summary>The balance stage threw: zero its outputs (estimator reset); a failing reset still leaves the outputs cleared.</summary>
+    private void ResetBalanceAfterError(double now)
+    {
+        try
+        {
+            estimator.Reset();
+        }
+        catch (Exception ex)
+        {
+            estimator.Outputs.Clear();
+            ReportError(ex, now);
+        }
+    }
+
+    /// <summary>
+    /// First frame without a running game after it ran: zero every export (v1 left stale values) and reset the
+    /// envelopes/filters so the next session starts clean.
+    /// </summary>
+    private void HandleGameNotRunning()
+    {
+        if (!wasRunning)
+        {
+            return;
+        }
+
+        wasRunning = false;
+        outputs.Clear();
+        processor.Reset();
+        estimator.Reset();
+    }
+
+    /// <summary>Per-game reset (v1 semantics) and creation of the game's balance adapter.</summary>
+    private void OnGameChanged()
+    {
+        gameKnown = true;
+        lastGame = ctx.GameName;
+
+        slipResolver.Reset();
+        capabilities.Reset(lastGame);
+        detector.Reset(lastGame);
+        preset = GamePresets.Get(lastGame, out presetName);
+
+        balanceSource = VehicleStateSourceFactory.Create(lastGame, log);
+        SwitchCar(CarIdentity.None); // until the new sim's car resolves
+        identityDirty = true;
+        sessionKnown = false;
+        debugLog.RequestScan();
+        log.Info("Game: " + lastGame + ", preset " + presetName + ", balance source " + balanceSource.Name
+            + (balanceSource.IsSupported ? string.Empty : " (understeer/oversteer not supported)"));
+    }
+
+    private void UpdateCar(double now)
+    {
+        // v1 max-G reset rule, unchanged.
+        string carId = ctx.CarId;
+        if (!string.Equals(carId, lastMaxGCarId, StringComparison.Ordinal) && !string.IsNullOrEmpty(carId) && carId != NotAvailable)
+        {
+            maxG.Reset();
+            lastMaxGCarId = carId;
+        }
+
+        bool changed = identityDirty
+            || !string.Equals(ctx.CarId, seenCarId, StringComparison.Ordinal)
+            || !string.Equals(ctx.CarModel, seenCarModel, StringComparison.Ordinal);
+        bool retry = !changed && identity.ShouldRetry && now >= nextIdentityRetry && now <= identityRetryUntil;
+        if (!changed && !retry)
+        {
+            return;
+        }
+
+        // Rare path (car change or bounded retry): allocations are fine here.
+        identityDirty = false;
+        seenCarId = ctx.CarId;
+        seenCarModel = ctx.CarModel;
+        CarIdentity resolved = CarIdentityResolver.Resolve(ctx, reader);
+        if (changed)
+        {
+            identityRetryUntil = now + IdentityRetryWindowSeconds;
+        }
+
+        nextIdentityRetry = resolved.ShouldRetry ? now + IdentityRetryIntervalSeconds : double.PositiveInfinity;
+        if (resolved.HasCar != identity.HasCar || !resolved.SameCarAs(identity))
+        {
+            SwitchCar(resolved);
+        }
+    }
+
+    /// <summary>Saves the current car's profile and loads (or creates) the profile of <paramref name="next"/>.</summary>
+    private void SwitchCar(CarIdentity next)
+    {
+        CarIdentity previous = identity;
+        CarProfile provisionalProfile = null;
+        if (profile != null)
+        {
+            bool provisional = previous.ShouldRetry && next.KeySource == CarKeySource.NativeModel
+                && string.Equals(previous.SimKey, next.SimKey, StringComparison.OrdinalIgnoreCase);
+            if (provisional)
+            {
+                // The livery-specific fallback key was only a placeholder until LMU reported the model name:
+                // do not leave a profile file behind for it; its state is carried over below instead.
+                scheduler.DiscardProfileChanges();
+                estimator.SaveTo(profile);
+                provisionalProfile = profile;
+            }
+            else
+            {
+                scheduler.FlushProfile();
+            }
+        }
+
+        scheduler.DiscardProfileChanges();
+        identity = next;
+        carKeySourceText = KeySourceTexts[Math.Max(0, Math.Min(KeySourceTexts.Length - 1, (int)next.KeySource))];
+        if (next.HasCar)
+        {
+            bool stored = store.ProfileExists(next.SimKey, next.CarKey);
+            profile = store.Load(next.SimKey, next.CarKey, next.DisplayName, next.CarClass);
+            if (provisionalProfile != null && !stored)
+            {
+                // First time this car is seen under its native key: keep what was set/learned under the placeholder.
+                CarryOver(provisionalProfile, profile);
+                scheduler.MarkProfileEdited(clock.Elapsed.TotalSeconds);
+            }
+
+            estimator.LoadCar(profile, Settings.GetCalibration(next.SimKey), next.CarClass);
+            carProfilePath = store.GetProfilePath(next.SimKey, next.CarKey);
+            log.Info("Car: " + next + ", profile " + carProfilePath);
+        }
+        else
+        {
+            if (profile != null)
+            {
+                log.Info("Car unloaded (" + previous + ")");
+            }
+
+            profile = null;
+            estimator.Unload();
+            carProfilePath = string.Empty;
+        }
+
+        carProfileVersion++;
+        nextResolutionTime = double.NegativeInfinity;
+    }
+
+    /// <summary>Copies the per-car settings and learned state of the placeholder profile into the resolved one.</summary>
+    private static void CarryOver(CarProfile from, CarProfile to)
+    {
+        to.SlipSensitivity = from.SlipSensitivity;
+        to.LockSensitivity = from.LockSensitivity;
+        to.UndersteerSensitivity = from.UndersteerSensitivity;
+        to.OversteerSensitivity = from.OversteerSensitivity;
+        from.Overrides.CopyTo(to.Overrides);
+        to.LearningLocked = from.LearningLocked;
+        to.Learned = from.Learned ?? new BalanceLearnedState();
+    }
+
+    /// <summary>
+    /// True while the car key is a livery-specific placeholder that may still be replaced by the native model name
+    /// (bounded retry window): the profile is not saved then, so no file is left behind for the placeholder.
+    /// </summary>
+    private bool IsIdentityProvisional(double now) => identity.ShouldRetry && now <= identityRetryUntil;
+
+    /// <summary>A new SimHub session (SessionId) restarts the balance filters and session adaptation layer.</summary>
+    private void UpdateSession()
+    {
+        Guid sessionId = ctx.SessionId;
+        if (!sessionKnown)
+        {
+            sessionKnown = true;
+            lastSessionId = sessionId;
+            return;
+        }
+
+        if (sessionId != lastSessionId)
+        {
+            lastSessionId = sessionId;
+            estimator.Reset();
+        }
+    }
+
+    private void DrainCommands(double now)
+    {
+        if (Interlocked.Exchange(ref settingsChangedFlag, 0) != 0)
+        {
+            scheduler.MarkSettingsDirty(now);
+        }
+
+        while (commands.TryDequeue(out Action command))
+        {
+            try
+            {
+                command();
+            }
+            catch (Exception ex)
+            {
+                ReportError(ex, now);
+            }
+        }
+    }
+
+    private void UpdateSnapshot(double now)
+    {
+        if (now - lastSnapshotTime < SnapshotIntervalSeconds)
+        {
+            return;
+        }
+
+        lastSnapshotTime = now;
+        if (Settings.ShowDebugView && now >= nextResolutionTime)
+        {
+            nextResolutionTime = now + ResolutionIntervalSeconds;
+            string text = balanceSource.DescribeResolution() ?? string.Empty;
+            if (!string.Equals(text, balanceResolution, StringComparison.Ordinal))
+            {
+                balanceResolution = text;
+            }
+        }
+
+        lock (snapshotLock)
+        {
+            FillSnapshot(snapshot);
+        }
+    }
+
+    /// <summary>Copies the current state into the shared snapshot (under <see cref="snapshotLock"/>; allocation-free).</summary>
+    private void FillSnapshot(LiveSnapshot s)
+    {
+        CarIdentity car = identity;
+        CarProfile carProfile = profile;
+
+        s.GameRunning = ctx.GameRunning;
+        s.GameName = lastGame;
+        s.HasCar = carProfile != null;
+        s.CarId = ctx.CarId;
+        s.CarKey = car.CarKey;
+        s.CarDisplayName = car.DisplayName;
+        s.CarClass = car.CarClass;
+        s.CarProfileVersion = carProfileVersion;
+        s.CarProfilePath = carProfilePath;
+        s.CarKeySource = carKeySourceText;
+        s.CarKeyProvisional = IsIdentityProvisional(clock.Elapsed.TotalSeconds);
+
+        s.SlipSensitivity = carProfile?.SlipSensitivity ?? CarProfile.DefaultSensitivity;
+        s.LockSensitivity = carProfile?.LockSensitivity ?? CarProfile.DefaultSensitivity;
+        s.UndersteerSensitivity = carProfile?.UndersteerSensitivity ?? CarProfile.DefaultSensitivity;
+        s.OversteerSensitivity = carProfile?.OversteerSensitivity ?? CarProfile.DefaultSensitivity;
+
+        // In per-wheel mode the slip source is not read every frame: its resolution tells whether it exists.
+        bool perWheel = detector.State == DetectionState.PerWheel;
+        SlipSourceKind kind = slipResolver.Kind;
+        s.SlipSource = detector.EffectiveSource;
+        s.ResolvedSlipSource = kind;
+        s.SlipDataAvailable = perWheel ? detector.WheelSpeedAvailable : detector.SlipSourceAvailable;
+        s.ShakeItSlipAvailable = kind == SlipSourceKind.ShakeIt && (perWheel || detector.SlipSourceAvailable);
+        s.ShakeItLockAvailable = slipResolver.HasWheelLock;
+        s.LockUsesShakeIt = processor.LockMergedShakeIt;
+        s.LockSynthesized = processor.LockSynthesizedFromSlip;
+        s.Detection = detector.State;
+        s.DetectSpeed = detector.DetectSpeed;
+        s.DetectLat = detector.DetectLat;
+        s.DetectBrake = detector.DetectBrake;
+        s.DetectSpeedOk = detector.DetectSpeedOk;
+        s.DetectCornerOk = detector.DetectCornerOk;
+        s.DetectBrakeOk = detector.DetectBrakeOk;
+        s.DetectFrames = detector.DetectFrames;
+        s.DetectMaxDelta = detector.DetectMaxDelta;
+        for (int i = 0; i < Core.Wheels.Count; i++)
+        {
+            s.SlipPaths[i] = slipResolver.ResolvedPaths[i];
+            s.LockPaths[i] = slipResolver.WheelLockPaths[i];
+            s.BaseSlip[i] = outputs.BaseSlip[i];
+            s.Slip[i] = outputs.Slip[i];
+            s.Lock[i] = outputs.Lock[i];
+            s.Abs[i] = outputs.Abs[i];
+            s.Tc[i] = outputs.Tc[i];
+            s.SlipBlend[i] = outputs.SlipBlend[i];
+            s.LockBlend[i] = outputs.LockBlend[i];
+            s.SlipTc[i] = outputs.SlipTc[i];
+            s.LockAbs[i] = outputs.LockAbs[i];
+            s.Loads[i] = outputs.Loads[i];
+        }
+
+        s.PresetName = presetName;
+        s.Preset = preset;
+
+        s.GameExportsAbs = capabilities.GameExportsAbs;
+        s.GameExportsTc = capabilities.GameExportsTc;
+        s.CarHasAbs = capabilities.CarHasAbs;
+        s.CarHasTc = capabilities.CarHasTc;
+        s.AbsLevel = capabilities.AbsLevel;
+        s.TcLevel = capabilities.TcLevel;
+        s.AggregateUsesTc = outputs.AggregateUsesTc;
+        s.AggregateUsesAbs = outputs.AggregateUsesAbs;
+        s.MaxSway = maxG.MaxSway;
+        s.MaxSurge = maxG.MaxSurge;
+        s.MaxDecel = maxG.MaxDecel;
+
+        s.BaseSlipMono = outputs.BaseSlipMono;
+        s.BaseLockMono = outputs.BaseLockMono;
+        s.BaseAbsMono = outputs.BaseAbsMono;
+        s.BaseTcMono = outputs.BaseTcMono;
+        s.SlipMono = outputs.SlipMono;
+        s.LockMono = outputs.LockMono;
+        s.SlipTcMono = outputs.SlipTcMono;
+        s.LockAbsMono = outputs.LockAbsMono;
+
+        s.BalanceSourceName = balanceSource.Name;
+        s.BalanceSupported = balanceSource.IsSupported;
+        s.BalanceResolution = balanceResolution;
+        estimator.Outputs.CopyTo(s.Balance);
+        s.ClassPresetAuto = estimator.AutoClassPreset;
+        s.ClassPresetOverride = carProfile?.Overrides.ClassPreset;
+        (carProfile?.Overrides ?? NoOverrides).CopyTo(s.Overrides);
+        s.LearningLocked = carProfile != null && carProfile.LearningLocked;
+
+        s.RecordingActive = recorder.IsRecording;
+        s.RecordingPath = recorder.FilePath;
+        s.LastError = lastError;
+        s.FrameCount = frameCount;
+        s.DataUpdateMs = dataUpdateMs;
+    }
+
+    // =====================================================================================================
+    // Persistence callbacks (data thread, via SaveScheduler)
+    // =====================================================================================================
+
+    /// <summary>Copies the settings on the data thread and writes them on the thread pool (no file IO in DataUpdate).</summary>
+    private void SaveSettingsAsync() => settingsWriter.SaveAsync(Settings);
+
+    /// <summary>
+    /// Writes the learned state into the profile and queues the file write. The JSON serialization runs here on the
+    /// data thread (so the thread pool never touches the live profile); it is a deliberate exception to DESIGN 2,
+    /// bounded to at most once per minute while learning and 2 s after a user edit.
+    /// </summary>
+    private void SaveCurrentProfile()
+    {
+        CarProfile car = profile;
+        if (car == null)
+        {
+            return;
+        }
+
+        double now = clock.Elapsed.TotalSeconds;
+        if (IsIdentityProvisional(now))
+        {
+            // Placeholder key: save only once the retry window has passed and the key is final.
+            scheduler.MarkProfileEdited(identityRetryUntil);
+            return;
+        }
+
+        estimator.SaveTo(car);
+        store.SaveAsync(car);
+    }
+
+    // =====================================================================================================
+    // Diagnostics
+    // =====================================================================================================
+
+    /// <summary>Error path: first error logged immediately, then at most every 10 s with a suppressed count.</summary>
+    private void ReportError(Exception ex, double now)
+    {
+        try
+        {
+            lastError = DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture) + " " + ex.GetType().Name + ": " + ex.Message;
+            lock (snapshotLock)
+            {
+                // Directly, so the UI shows the error even when the snapshot update itself is what fails.
+                snapshot.LastError = lastError;
+            }
+
+            if (errorLogged && now - lastErrorLogTime < ErrorLogIntervalSeconds)
+            {
+                suppressedErrors++;
+                return;
+            }
+
+            string suppressed = suppressedErrors > 0
+                ? " (" + suppressedErrors.ToString(CultureInfo.InvariantCulture) + " further errors suppressed)"
+                : string.Empty;
+            errorLogged = true;
+            lastErrorLogTime = now;
+            suppressedErrors = 0;
+            log.Error("DataUpdate error" + suppressed + ": " + ex);
+        }
+        catch
+        {
+            // Reporting must never throw out of DataUpdate.
+        }
+    }
+
+    private void LogSlipResolution()
+    {
+        string text = "Slip source: " + slipResolver.Kind + " [" + string.Join(", ", slipResolver.ResolvedPaths) + "]";
+        if (slipResolver.Kind == SlipSourceKind.RFactorRotation)
+        {
+            text += FormattableString.Invariant(
+                $" radii=[{slipResolver.GetTireRadius(0):F3},{slipResolver.GetTireRadius(1):F3},{slipResolver.GetTireRadius(2):F3},{slipResolver.GetTireRadius(3):F3}]");
+        }
+
+        text += slipResolver.HasWheelLock ? ", ShakeIT WheelLock available" : ", no ShakeIT WheelLock";
+        log.Info(text);
+    }
+
+    // =====================================================================================================
+    // ISlipLockHost (UI thread)
+    // =====================================================================================================
+
+    /// <inheritdoc />
+    public void CopySnapshot(LiveSnapshot target)
+    {
+        if (target == null)
+        {
+            return;
+        }
+
+        lock (snapshotLock)
+        {
+            snapshot.CopyTo(target);
+        }
+    }
+
+    /// <inheritdoc />
+    public void NotifySettingsChanged() => Interlocked.Exchange(ref settingsChangedFlag, 1);
+
+    /// <inheritdoc />
+    public void EditSettings(Action<PluginSettings> edit)
+    {
+        if (edit == null)
+        {
+            return;
+        }
+
+        commands.Enqueue(() =>
+        {
+            edit(Settings);
+            scheduler.MarkSettingsDirty(clock.Elapsed.TotalSeconds);
+        });
+    }
+
+    /// <inheritdoc />
+    public void SetSensitivity(SensitivityKind kind, double percent) =>
+        EnqueueProfileEdit(car => car.SetSensitivity(kind, percent));
+
+    /// <inheritdoc />
+    public void SetOverride(BalanceOverrideKind kind, double? value) =>
+        EnqueueProfileEdit(car => car.Overrides.Set(kind, value));
+
+    /// <inheritdoc />
+    public void SetClassPresetOverride(BalanceClassPreset? classPreset) =>
+        EnqueueProfileEdit(car => car.Overrides.ClassPreset = classPreset);
+
+    /// <inheritdoc />
+    public void SetLearningLocked(bool locked) =>
+        EnqueueProfileEdit(car => car.LearningLocked = locked);
+
+    /// <inheritdoc />
+    public void ResetLearning() =>
+        EnqueueProfileEdit(car =>
+        {
+            estimator.ResetLearning();
+
+            // A wrongly verified steering sign would keep the relearned model broken: verify it again too.
+            estimator.ResetCalibration();
+            log.Info("Learned vehicle model cleared for " + car.SimKey + "/" + car.CarKey);
+        });
+
+    /// <inheritdoc />
+    public void SetRecording(bool enabled)
+    {
+        // The recorder is thread-safe; Start does no file IO on the caller's thread.
+        if (enabled)
+        {
+            CarIdentity car = identity;
+            string sim = car.HasCar ? car.SimKey : lastGame;
+            recorder.Start(Path.Combine(pluginDataRoot, RecordingsFolder), sim, car.CarKey);
+        }
+        else
+        {
+            recorder.Stop();
+        }
+    }
+
+    /// <inheritdoc />
+    public void RequestRetest() =>
+        commands.Enqueue(() =>
+        {
+            detector.RequestRetest();
+            slipResolver.Reset(); // lets a ShakeIT profile activated later replace the rF2 rotation source
+            balanceSource.Reset();
+            estimator.Reset();
+            estimator.ResetCalibration(); // the sim's sign conventions are re-verified as well
+            log.Info("Retest requested for " + lastGame);
+        });
+
+    /// <inheritdoc />
+    public string GenerateShakeItDataExportProfile() =>
+        Report(ShakeItProfileGenerator.WriteDataExportProfile(ShakeItProfileGenerator.DefaultDirectory));
+
+    /// <inheritdoc />
+    public string GenerateHapticPedalProfile() =>
+        Report(ShakeItProfileGenerator.WriteHapticPedalProfile(ShakeItProfileGenerator.DefaultDirectory));
+
+    /// <inheritdoc />
+    public string GenerateBalanceProfile() =>
+        Report(ShakeItProfileGenerator.WriteBalanceProfile(ShakeItProfileGenerator.DefaultDirectory));
+
+    /// <inheritdoc />
+    public string ExportCarProfile(string filePath)
+    {
+        if (string.IsNullOrEmpty(filePath))
+        {
+            return ShakeItProfileGenerator.ErrorMessagePrefix + "no file selected.";
+        }
+
+        // Snapshot the profile (with the current learned state) on the data thread, write it on this thread.
+        CarProfile copy = null;
+        string failure = RunOnDataThread(() =>
+        {
+            CarProfile car = profile;
+            if (car == null)
+            {
+                return "no car loaded.";
+            }
+
+            estimator.SaveTo(car);
+            copy = JsonFile.Deserialize<CarProfile>(JsonFile.Serialize(car), out _);
+            return null;
+        });
+        if (failure != null)
+        {
+            return ShakeItProfileGenerator.ErrorMessagePrefix + failure;
+        }
+
+        return store.Export(copy, filePath, out string error)
+            ? "Exported to " + filePath
+            : ShakeItProfileGenerator.ErrorMessagePrefix + error;
+    }
+
+    /// <inheritdoc />
+    public string ImportCarProfile(string filePath)
+    {
+        if (string.IsNullOrEmpty(filePath))
+        {
+            return ShakeItProfileGenerator.ErrorMessagePrefix + "no file selected.";
+        }
+
+        CarIdentity car = identity;
+        if (!car.HasCar)
+        {
+            return ShakeItProfileGenerator.ErrorMessagePrefix + "no car loaded.";
+        }
+
+        // Read and validate the file on this thread; apply on the data thread and report what really happened.
+        CarProfile imported = store.Import(filePath, out string error);
+        if (imported == null)
+        {
+            return ShakeItProfileGenerator.ErrorMessagePrefix + error;
+        }
+
+        string failure = RunOnDataThread(() => ApplyImportedProfile(imported, car));
+        return failure != null
+            ? ShakeItProfileGenerator.ErrorMessagePrefix + failure
+            : "Imported " + Path.GetFileName(filePath) + " into " + car.DisplayName + ".";
+    }
+
+    /// <inheritdoc />
+    public string DumpPropertyNames()
+    {
+        string header;
+        lock (snapshotLock)
+        {
+            header = "Game: " + snapshot.GameName + "\r\nCar: " + snapshot.CarKey + " (id " + snapshot.CarId + ")"
+                + "\r\nSlip source: " + snapshot.SlipSource + "\r\nBalance source: " + snapshot.BalanceSourceName;
+        }
+
+        string path = PropertyDump.Write(PluginManager, reader, pluginDataRoot, header);
+        log.Info("Property dump written: " + path);
+        return "Property names written to " + path;
+    }
+
+    /// <summary>Queues an edit of the current car profile (ignored without a car) and schedules its save.</summary>
+    private void EnqueueProfileEdit(Action<CarProfile> edit)
+    {
+        commands.Enqueue(() =>
+        {
+            CarProfile car = profile;
+            if (car == null)
+            {
+                return;
+            }
+
+            edit(car);
+            scheduler.MarkProfileEdited(clock.Elapsed.TotalSeconds);
+        });
+    }
+
+    /// <summary>
+    /// Replaces the current car's profile with an imported one, keeping the current car's identity. Returns null on
+    /// success, else why nothing was applied (the car changed or unloaded since the user chose the file).
+    /// </summary>
+    private string ApplyImportedProfile(CarProfile imported, CarIdentity target)
+    {
+        CarProfile current = profile;
+        if (current == null)
+        {
+            return "no car loaded.";
+        }
+
+        if (!string.Equals(current.SimKey, target.SimKey, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(current.CarKey, target.CarKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return "the car changed before the import could be applied; nothing was imported.";
+        }
+
+        imported.SimKey = current.SimKey;
+        imported.CarKey = current.CarKey;
+        imported.DisplayName = current.DisplayName;
+        imported.CarClass = current.CarClass;
+        scheduler.DiscardProfileChanges();
+        profile = imported;
+        estimator.LoadCar(imported, Settings.GetCalibration(imported.SimKey), identity.CarClass);
+        if (IsIdentityProvisional(clock.Elapsed.TotalSeconds))
+        {
+            scheduler.MarkProfileEdited(identityRetryUntil);
+        }
+        else
+        {
+            store.SaveAsync(imported);
+        }
+
+        carProfileVersion++;
+        log.Info("Car profile imported for " + imported.SimKey + "/" + imported.CarKey);
+        return null;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="action"/> on the data thread and waits for it (UI requests that need data-thread-owned
+    /// state). Returns the action's result, or an error text when the data thread does not respond in time.
+    /// </summary>
+    private string RunOnDataThread(Func<string> action)
+    {
+        if (Thread.CurrentThread.ManagedThreadId == dataThreadId)
+        {
+            return action();
+        }
+
+        var done = new ManualResetEventSlim(false);
+        string result = null;
+        commands.Enqueue(() =>
+        {
+            try
+            {
+                result = action();
+            }
+            catch (Exception ex)
+            {
+                result = ex.Message;
+            }
+            finally
+            {
+                done.Set();
+            }
+        });
+
+        if (!done.Wait(DataThreadTimeoutMs))
+        {
+            // Not disposed: the queued command may still run later and signal it.
+            return "SimHub is not processing data right now, try again.";
+        }
+
+        done.Dispose();
+        return result;
+    }
+
+    private string Report(ProfileWriteResult result)
+    {
+        if (result.Success)
+        {
+            log.Info("Profile written: " + result.Path);
+        }
+        else
+        {
+            log.Warn("Profile generation failed: " + result.Message);
+        }
+
+        return result.Message;
     }
 }

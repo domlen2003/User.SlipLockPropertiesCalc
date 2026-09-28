@@ -1,0 +1,55 @@
+<UserControl x:Class="User.SlipLockPropertiesCalc.UI.Controls.WheelQuad"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:User.SlipLockPropertiesCalc.UI.Controls"
+             xmlns:conv="clr-namespace:User.SlipLockPropertiesCalc.UI.Converters"
+             x:Name="Root"
+             mc:Ignorable="d">
+    <!-- Four vertical bars in car layout (FL FR / RL RR) with a title; binds only to its own dependency properties. -->
+    <UserControl.Resources>
+        <conv:NumberFormatConverter x:Key="NumberFormat" />
+        <conv:TextToVisibilityConverter x:Key="TextToVisibility" />
+    </UserControl.Resources>
+    <StackPanel HorizontalAlignment="Center">
+        <TextBlock HorizontalAlignment="Center"
+                   Margin="0,0,0,4"
+                   FontWeight="SemiBold"
+                   Text="{Binding Title, ElementName=Root}"
+                   Visibility="{Binding Title, ElementName=Root, Converter={StaticResource TextToVisibility}}" />
+        <ItemsControl HorizontalAlignment="Center"
+                      Focusable="False"
+                      ItemsSource="{Binding Values.Items, ElementName=Root}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <UniformGrid Columns="2" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Margin="6,2">
+                        <ProgressBar HorizontalAlignment="Center"
+                                     Orientation="Vertical"
+                                     Width="{Binding BarWidth, RelativeSource={RelativeSource AncestorType=local:WheelQuad}}"
+                                     Height="{Binding BarHeight, RelativeSource={RelativeSource AncestorType=local:WheelQuad}}"
+                                     Minimum="{Binding Minimum, RelativeSource={RelativeSource AncestorType=local:WheelQuad}}"
+                                     Maximum="{Binding Maximum, RelativeSource={RelativeSource AncestorType=local:WheelQuad}}"
+                                     Value="{Binding Value, Mode=OneWay}" />
+                        <StackPanel HorizontalAlignment="Center" Orientation="Horizontal" Margin="0,2,0,0">
+                            <TextBlock Opacity="0.7" Text="{Binding Label}" />
+                            <TextBlock Margin="4,0,0,0" MinWidth="30" FontFamily="Consolas" TextAlignment="Right">
+                                <TextBlock.Text>
+                                    <MultiBinding Converter="{StaticResource NumberFormat}">
+                                        <Binding Path="Value" />
+                                        <Binding Path="ValueFormat" RelativeSource="{RelativeSource AncestorType=local:WheelQuad}" />
+                                    </MultiBinding>
+                                </TextBlock.Text>
+                            </TextBlock>
+                        </StackPanel>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </StackPanel>
+</UserControl>
