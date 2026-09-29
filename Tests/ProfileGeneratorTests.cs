@@ -16,6 +16,30 @@ internal sealed class ProfileGeneratorTests
     private const string NormalizedId = "<id>";
     private static readonly string[] IdMembers = { "ContainerId", "ProfileId" };
 
+    /// <summary>
+    /// The gear-shift effect exactly as the user exported it from ShakeIT
+    /// (Documents\SimHub\Any Game - SlipLock Haptic Pedals old.siprofile). Do not edit: the generator must match it.
+    /// </summary>
+    private const string UserExportGearShiftJson = @"{
+ ""ContainerType"": ""GearEffectContainer"",
+ ""IsEnabled"": true,
+ ""Gain"": 37.04761904761914,
+ ""ModulateGainUsingRpms"": false,
+ ""MaxFeedbackRpmPercent"": 90,
+ ""MinFeedbackRpmPercent"": 50,
+ ""GearMode"": 2,
+ ""AlwaysIgnoreNeutral"": false,
+ ""IgnoreNeutral"": true,
+ ""NeutralDebouningTime"": 200.0,
+ ""EngagingDebouningTime"": 1000.0,
+ ""SettingsStore"": { ""Settings"": [ { ""Channels"": { ""All"": { ""Channels"": {
+   ""0"": { ""IsEnabled"": false }, ""1"": { ""IsEnabled"": true }, ""2"": { ""IsEnabled"": true } } } },
+   ""TypeName"": ""DeviceChannelActivationSettings"" } ] },
+ ""ContainerId"": ""e068c7a2-4072-45bc-b40f-79db58b623b7"",
+ ""Filter"": { ""Duration"": 90, ""FilterType"": ""PulseFilter"" },
+ ""Output"": { ""UsePrehemptiveMode"": true, ""Frequency"": 15, ""OutputType"": ""SingleToneOutput"" }
+}";
+
     [Test]
     public void DataExportProfile_MatchesV1()
     {
@@ -26,7 +50,7 @@ internal sealed class ProfileGeneratorTests
     }
 
     [Test]
-    public void HapticPedalProfile_MatchesV1_ExceptFixedChannelMapOfDisabledEffects()
+    public void HapticPedalProfile_MatchesV1_ExceptChannelLayoutAndGearShift()
     {
         JObject expected = ParseV1(V1Oracle.HapticPedalProfile(DeterministicIds()));
         JObject actual = ShakeItProfileGenerator.BuildHapticPedalProfile(DeterministicIds());
@@ -40,30 +64,50 @@ internal sealed class ProfileGeneratorTests
             Assert.False((bool)channels["0"]["IsEnabled"] || (bool)channels["1"]["IsEnabled"] || (bool)channels["2"]["IsEnabled"], "v1 quirk present in the oracle");
         }
 
-        ChannelsOf(effects[2])["0"]["IsEnabled"] = true; // Slip*Throttle -> throttle motor
-        ChannelsOf(effects[3])["1"]["IsEnabled"] = true; // Lock*Brake -> brake motor
+        // v1 put the throttle motor on channel 0; the user's pedal set has it on channel 2 (brake stays on 1).
+        Assert.True((bool)ChannelsOf(effects[0])["0"]["IsEnabled"], "v1 throttle channel 0 in the oracle");
+        ChannelsOf(effects[0])["0"]["IsEnabled"] = false;
+        ChannelsOf(effects[0])["2"]["IsEnabled"] = true;  // SlipTC -> throttle motor
+        ChannelsOf(effects[2])["2"]["IsEnabled"] = true;  // Slip*Throttle -> throttle motor
+        ChannelsOf(effects[3])["1"]["IsEnabled"] = true;  // Lock*Brake -> brake motor
+
+        // New effect appended after the v1 effects: the gear shift from the user's exported profile.
+        effects.Add(ParseV1(UserExportGearShiftJson));
 
         AssertSameJson(expected, actual);
     }
 
     [Test]
-    public void HapticPedalProfile_RoutesEachEffectToOnePedal()
+    public void HapticPedalProfile_RoutesEachEffectToItsPedals()
     {
         JObject profile = ShakeItProfileGenerator.BuildHapticPedalProfile(DeterministicIds());
         var effects = (JArray)profile["EffectsContainers"];
-        bool[] expectedThrottle = { true, false, true, false };
-        bool[] expectedEnabled = { true, true, false, false };
+        Assert.Equal(5, effects.Count, "four pedal effects plus the gear shift");
+
+        // Channels: 0 clutch, 1 brake, 2 throttle.
+        bool[] expectedBrake = { false, true, false, true, true };
+        bool[] expectedThrottle = { true, false, true, false, true };
+        bool[] expectedEnabled = { true, true, false, false, true };
 
         for (int i = 0; i < effects.Count; i++)
         {
             JObject channels = ChannelsOf(effects[i]);
-            Assert.Equal(expectedThrottle[i], (bool)channels["0"]["IsEnabled"], "throttle channel of effect " + i);
-            Assert.Equal(!expectedThrottle[i], (bool)channels["1"]["IsEnabled"], "brake channel of effect " + i);
-            Assert.False((bool)channels["2"]["IsEnabled"], "clutch channel of effect " + i);
+            Assert.False((bool)channels["0"]["IsEnabled"], "clutch channel of effect " + i);
+            Assert.Equal(expectedBrake[i], (bool)channels["1"]["IsEnabled"], "brake channel of effect " + i);
+            Assert.Equal(expectedThrottle[i], (bool)channels["2"]["IsEnabled"], "throttle channel of effect " + i);
             Assert.Equal(expectedEnabled[i], (bool)effects[i]["IsEnabled"], "effect enabled " + i);
         }
 
         Assert.Equal("[SlipLockPropertiesCalc.SlipLock.SlipTC.Mono]", (string)effects[0]["FrontLeftFormula"]["Expression"], "formula uses the SimHub property prefix");
+    }
+
+    [Test]
+    public void HapticPedalProfile_GearShiftMatchesUserExport()
+    {
+        JObject profile = ShakeItProfileGenerator.BuildHapticPedalProfile(DeterministicIds());
+        var actual = (JObject)profile["EffectsContainers"][4];
+
+        AssertSameJson(ParseV1(UserExportGearShiftJson), actual);
     }
 
     [Test]
@@ -125,7 +169,7 @@ internal sealed class ProfileGeneratorTests
             }
         }
 
-        Assert.Equal(4 + 5 + 3, idCount, "id count (3+1, 4+1, 2+1)");
+        Assert.Equal(4 + 6 + 3, idCount, "id count (3+1, 5+1, 2+1)");
         Assert.Equal(idCount, ids.Count, "all ids distinct");
 
         // A second write regenerates ids and overwrites the file.

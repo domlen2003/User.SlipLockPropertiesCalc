@@ -63,16 +63,18 @@ create the ShakeIT data export profile below...".
 ### 1.4 Map the channels to your devices
 
 - **Haptic pedals:** click **Haptic pedal profile** to write `SlipLock_HapticPedals.siprofile`, then import it in
-  **ShakeIT Motors**. It contains four custom effects:
-  - `SlipTC Aggregate (throttle)`: `[SlipLockPropertiesCalc.SlipLock.SlipTC.Mono]` on the throttle channel (0),
+  **ShakeIT Motors**. It contains four custom effects and a gear-shift effect:
+  - `SlipTC Aggregate (throttle)`: `[SlipLockPropertiesCalc.SlipLock.SlipTC.Mono]` on the throttle channel (2),
     30 Hz. Enabled.
   - `LockABS Aggregate (brake)`: `[SlipLockPropertiesCalc.SlipLock.LockABS.Mono]` on the brake channel (1),
     25 Hz. Enabled.
   - `Slip*Throttle` and `Lock*Brake`: the `SlipBlend` and `LockBlend` alternatives. Disabled; enable them instead
     of the aggregates if you prefer.
+  - Gear shift (ShakeIT's built-in gear effect): a 90 ms, 15 Hz pulse on brake and throttle when a gear engages,
+    neutral ignored, gain 37 %. Enabled.
 
-  The channel layout (0 throttle, 1 brake, 2 clutch) matches typical haptic pedal devices. Re-assign channels in
-  ShakeIT if yours differ.
+  The channel layout (0 clutch, 1 brake, 2 throttle) matches the author's pedal set, taken from their exported
+  ShakeIT profile. Re-assign channels in ShakeIT if yours differ.
 - **Understeer / oversteer:** see section 4.
 - **Your own effects or dashboards:** use any property from section 3 in a ShakeIT custom effect formula, for
   example `[SlipLockPropertiesCalc.SlipLock.Lock.FrontLeft]`. SlipLock values are 0..100. Balance values are 0..1,
@@ -390,6 +392,8 @@ Files at a glance:
 - **Haptic pedal profile channel fix:** in v1 the disabled `Slip*Throttle` and `Lock*Brake` effects also had their
   pedal channel disabled, so enabling the effect produced nothing. Their channel is now enabled; only the effect
   itself is off.
+- **Haptic pedal profile layout:** throttle effects moved from channel 0 to channel 2 (brake stays on 1) to match
+  the author's pedals, and ShakeIT's gear-shift effect is included.
 - **Retest** also re-resolves the slip source, so a ShakeIT export activated after rF2 rotation was chosen is now
   picked up. It also re-verifies the balance sign calibration.
 - Slip-source probing is rate-limited (every 0.5 s while unresolved; WheelLock every 2 s) instead of every frame.

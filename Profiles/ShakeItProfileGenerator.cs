@@ -31,12 +31,18 @@ internal sealed class ProfileWriteResult
 /// <item><b>Data export</b> (Bass shakers tab): wheel slip/lock effects with outputs disabled, used only to export
 /// <c>ShakeITBSV3Plugin.Export.WheelSlip.*</c>/<c>WheelLock.*</c>, the plugin's preferred slip source.</item>
 /// <item><b>Haptic pedals</b> (Motors tab): custom effects driving throttle/brake pedal motors from the SlipLock
-/// mono channels.</item>
+/// mono channels, plus a gear-shift pulse on both pedals.</item>
 /// <item><b>Balance</b> (Motors tab): understeer on the front corners, oversteer on the rear corners.</item>
 /// </list>
-/// The first two are identical to the v1 output (same keys, values and types; only the ids are fresh) with one
-/// fix: the disabled "Slip*Throttle"/"Lock*Brake" effects keep their pedal channel enabled, so enabling the effect
-/// in ShakeIT is enough (v1 accidentally disabled the channel together with the effect).
+/// The data export is identical to the v1 output (same keys, values and types; only the ids are fresh). The haptic
+/// pedal profile keeps v1's effects and settings with three deliberate differences:
+/// <list type="bullet">
+/// <item>Channels follow the user's pedal set (0 clutch, 1 brake, 2 throttle) as in their exported ShakeIT profile;
+/// v1 assumed throttle on channel 0.</item>
+/// <item>The disabled "Slip*Throttle"/"Lock*Brake" effects keep their pedal channel enabled, so enabling the effect
+/// in ShakeIT is enough (v1 accidentally disabled the channel together with the effect).</item>
+/// <item>A gear-shift effect (<c>GearEffectContainer</c>) is appended, copied from the user's exported profile.</item>
+/// </list>
 /// </summary>
 internal static class ShakeItProfileGenerator
 {
@@ -87,11 +93,30 @@ internal static class ShakeItProfileGenerator
     /// <summary>Balance outputs are 0..1; ShakeIT effect formulas expect 0..100.</summary>
     private const string BalanceToPercent = " * 100";
 
-    /// <summary>Pedal motor channels of typical haptic pedal devices (Simagic/SimNet layout).</summary>
+    // Gear-shift effect, values copied from the user's exported "SlipLock Haptic Pedals" profile
+    // (Documents\SimHub\Any Game - SlipLock Haptic Pedals old.siprofile). The gain is the slider value as ShakeIT
+    // stored it, kept exact so the regenerated profile feels the same.
+    private const double GearShiftGain = 37.04761904761914;
+    private const int GearShiftMaxFeedbackRpmPercent = 90;
+    private const int GearShiftMinFeedbackRpmPercent = 50;
+
+    /// <summary>ShakeIT gear mode as stored in the user's profile.</summary>
+    private const int GearShiftMode = 2;
+
+    private const double GearShiftNeutralDebounceMs = 200.0;
+    private const double GearShiftEngagingDebounceMs = 1000.0;
+    private const int GearShiftPulseDurationMs = 90;
+    private const int GearShiftFrequencyHz = 15;
+
+    /// <summary>
+    /// Pedal motor channels of the user's haptic pedal set: clutch, brake, throttle from left to right. Taken from
+    /// their exported ShakeIT profile (throttle effect on channel 2, brake on 1).
+    /// </summary>
     private enum PedalChannel
     {
-        Throttle = 0,
+        Clutch = 0,
         Brake = 1,
+        Throttle = 2,
     }
 
     /// <summary>Default output folder: <c>Documents\SimHub</c> (v1 location).</summary>
@@ -175,8 +200,8 @@ internal static class ShakeItProfileGenerator
     }
 
     /// <summary>
-    /// Motors profile: SlipTC → throttle pedal, LockABS → brake pedal (enabled), plus the pure Slip*Throttle and
-    /// Lock*Brake blends as disabled alternatives.
+    /// Motors profile: SlipTC → throttle pedal, LockABS → brake pedal (enabled), the pure Slip*Throttle and
+    /// Lock*Brake blends as disabled alternatives, and a gear-shift pulse on brake and throttle.
     /// </summary>
     /// <param name="newId">Container/profile id factory.</param>
     internal static JObject BuildHapticPedalProfile(Func<string> newId)
@@ -185,7 +210,8 @@ internal static class ShakeItProfileGenerator
             PedalEffect(newId, "SlipTC Aggregate (throttle)", "SlipLock.SlipTC", PedalChannel.Throttle, ThrottleMotorFrequencyHz, enabled: true),
             PedalEffect(newId, "LockABS Aggregate (brake)", "SlipLock.LockABS", PedalChannel.Brake, BrakeMotorFrequencyHz, enabled: true),
             PedalEffect(newId, "Slip*Throttle (throttle)", "SlipLock.SlipBlend", PedalChannel.Throttle, ThrottleMotorFrequencyHz, enabled: false),
-            PedalEffect(newId, "Lock*Brake (brake)", "SlipLock.LockBlend", PedalChannel.Brake, BrakeMotorFrequencyHz, enabled: false));
+            PedalEffect(newId, "Lock*Brake (brake)", "SlipLock.LockBlend", PedalChannel.Brake, BrakeMotorFrequencyHz, enabled: false),
+            GearShiftEffect(newId));
 
         return MotorsProfile(effects, "SlipLock Haptic Pedals", newId);
     }
@@ -299,22 +325,54 @@ internal static class ShakeItProfileGenerator
         return effect;
     }
 
+    /// <summary>
+    /// ShakeIT's built-in gear-shift effect: a short 15 Hz pulse on brake and throttle when a gear engages, neutral
+    /// ignored. Member order and value types match the user's exported profile exactly.
+    /// </summary>
+    private static JObject GearShiftEffect(Func<string> newId) => new JObject
+    {
+        ["ContainerType"] = "GearEffectContainer",
+        ["IsEnabled"] = true,
+        ["Gain"] = GearShiftGain,
+        ["ModulateGainUsingRpms"] = false,
+        ["MaxFeedbackRpmPercent"] = GearShiftMaxFeedbackRpmPercent,
+        ["MinFeedbackRpmPercent"] = GearShiftMinFeedbackRpmPercent,
+        ["GearMode"] = GearShiftMode,
+        ["AlwaysIgnoreNeutral"] = false,
+        ["IgnoreNeutral"] = true,
+        ["NeutralDebouningTime"] = GearShiftNeutralDebounceMs,
+        ["EngagingDebouningTime"] = GearShiftEngagingDebounceMs,
+        ["SettingsStore"] = ChannelMap(PedalChannel.Brake, PedalChannel.Throttle),
+        ["ContainerId"] = newId(),
+        ["Filter"] = new JObject
+        {
+            ["Duration"] = GearShiftPulseDurationMs,
+            ["FilterType"] = "PulseFilter",
+        },
+        ["Output"] = new JObject
+        {
+            ["UsePrehemptiveMode"] = true,
+            ["Frequency"] = GearShiftFrequencyHz,
+            ["OutputType"] = "SingleToneOutput",
+        },
+    };
+
     private static JObject Formula(string expression) => new JObject { ["Expression"] = expression };
 
     /// <summary>
-    /// Device channel activation: only the given pedal's motor channel (0 throttle, 1 brake, 2 clutch) is on.
+    /// Device channel activation: only the given pedals' motor channels (see <see cref="PedalChannel"/>) are on.
     /// Deliberate fix of v1: the channel is enabled independently of the effect's own <c>IsEnabled</c>. v1 built
     /// the disabled alternatives (Slip*Throttle, Lock*Brake) by replacing every <c>"IsEnabled":true</c> in the effect
     /// JSON, which also switched off their pedal channel, so enabling such an effect in ShakeIT produced no output
     /// until the channel was found and enabled too.
     /// </summary>
-    private static JObject ChannelMap(PedalChannel pedal)
+    private static JObject ChannelMap(params PedalChannel[] pedals)
     {
         var channels = new JObject
         {
-            ["0"] = new JObject { ["IsEnabled"] = pedal == PedalChannel.Throttle },
-            ["1"] = new JObject { ["IsEnabled"] = pedal == PedalChannel.Brake },
-            ["2"] = new JObject { ["IsEnabled"] = false },
+            ["0"] = new JObject { ["IsEnabled"] = Array.IndexOf(pedals, PedalChannel.Clutch) >= 0 },
+            ["1"] = new JObject { ["IsEnabled"] = Array.IndexOf(pedals, PedalChannel.Brake) >= 0 },
+            ["2"] = new JObject { ["IsEnabled"] = Array.IndexOf(pedals, PedalChannel.Throttle) >= 0 },
         };
 
         var activation = new JObject
