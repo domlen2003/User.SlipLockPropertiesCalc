@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <!-- Console test runner (no NuGet needed). Compiles the SimHub-independent plugin sources directly.
+       Build:  MSBuild Tests\DivebombLogistics.Tests.csproj -p:Configuration=Debug
+       Run:    Tests\bin\Debug\DivebombLogistics.Tests.exe [options], see Tests\Program.cs -->
+
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{6C1B7E2A-4D0F-4E57-9B39-2E7A5C3F8D11}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>DivebombLogistics.Tests</RootNamespace>
+    <AssemblyName>DivebombLogistics.Tests</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <LangVersion>10.0</LangVersion>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Deterministic>true</Deterministic>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <DefineConstants>DEBUG;TRACE;TESTS</DefineConstants>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Newtonsoft.Json">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(SIMHUB_INSTALL_PATH)Newtonsoft.Json.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- SimHub-independent plugin sources (must never reference SimHub/WPF assemblies). Module UI folders are excluded
+         except their pure host interface and snapshot; Integration contributes only the pure legacy migration. -->
+    <Compile Include="..\Core\**\*.cs" Link="Linked\Core\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Framework\**\*.cs" Link="Linked\Framework\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Haptics\**\*.cs" Exclude="..\Haptics\UI\**" Link="Linked\Haptics\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Haptics\UI\HapticsSnapshot.cs" Link="Linked\Haptics\UI\HapticsSnapshot.cs" />
+    <Compile Include="..\Haptics\UI\IHapticsHost.cs" Link="Linked\Haptics\UI\IHapticsHost.cs" />
+    <Compile Include="..\SpeedDial\**\*.cs" Exclude="..\SpeedDial\UI\**" Link="Linked\SpeedDial\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\SpeedDial\UI\SpeedDialSnapshot.cs" Link="Linked\SpeedDial\UI\SpeedDialSnapshot.cs" />
+    <Compile Include="..\SpeedDial\UI\ISpeedDialHost.cs" Link="Linked\SpeedDial\UI\ISpeedDialHost.cs" />
+    <Compile Include="..\Integration\LegacyMigration.cs;..\Integration\MigrationResult.cs;..\Integration\MigrationMarker.cs;..\Integration\MigrationPending.cs" Link="Linked\Integration\%(Filename)%(Extension)" />
+    <!-- Test sources. -->
+    <Compile Include="**\*.cs" Exclude="bin\**;obj\**" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

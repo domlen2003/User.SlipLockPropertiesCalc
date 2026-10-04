@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using DivebombLogistics.Haptics.Profiles;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using User.SlipLockPropertiesCalc.Profiles;
 
-namespace User.SlipLockPropertiesCalc.Tests;
+namespace DivebombLogistics.Tests;
 
 /// <summary>
 /// Tests of <see cref="ShakeItProfileGenerator"/>. The v1 profiles are checked against a verbatim copy of the v1
@@ -43,7 +43,7 @@ internal sealed class ProfileGeneratorTests
     [Test]
     public void DataExportProfile_MatchesV1()
     {
-        JObject expected = ParseV1(V1Oracle.DataExportProfile(DeterministicIds()));
+        JObject expected = WithDlpNames(ParseV1(V1Oracle.DataExportProfile(DeterministicIds())), "DLP Data Export", expectedFormulas: 0);
         JObject actual = ShakeItProfileGenerator.BuildDataExportProfile(DeterministicIds());
 
         AssertSameJson(expected, actual);
@@ -52,7 +52,7 @@ internal sealed class ProfileGeneratorTests
     [Test]
     public void HapticPedalProfile_MatchesV1_ExceptChannelLayoutAndGearShift()
     {
-        JObject expected = ParseV1(V1Oracle.HapticPedalProfile(DeterministicIds()));
+        JObject expected = WithDlpNames(ParseV1(V1Oracle.HapticPedalProfile(DeterministicIds())), "DLP Haptic Pedals", expectedFormulas: 4);
         JObject actual = ShakeItProfileGenerator.BuildHapticPedalProfile(DeterministicIds());
 
         // v1 disabled the alternative effects with a text replace of "IsEnabled":true, which also switched off
@@ -98,7 +98,7 @@ internal sealed class ProfileGeneratorTests
             Assert.Equal(expectedEnabled[i], (bool)effects[i]["IsEnabled"], "effect enabled " + i);
         }
 
-        Assert.Equal("[SlipLockPropertiesCalc.SlipLock.SlipTC.Mono]", (string)effects[0]["FrontLeftFormula"]["Expression"], "formula uses the SimHub property prefix");
+        Assert.Equal("[DLP.SlipLock.SlipTC.Mono]", (string)effects[0]["FrontLeftFormula"]["Expression"], "formula uses the SimHub property prefix");
     }
 
     [Test]
@@ -131,13 +131,13 @@ internal sealed class ProfileGeneratorTests
 
         Assert.Equal(string.Join(",", hapticKeys), string.Join(",", profileKeys), "profile members");
         Assert.Equal(3, (int)profile["OutputMode"], "motors output mode");
-        Assert.Equal("SlipLock Balance", (string)profile["Name"]);
+        Assert.Equal("DLP Balance", (string)profile["Name"]);
 
         var effects = (JArray)profile["EffectsContainers"];
         Assert.Equal(2, effects.Count, "two effects");
 
-        const string Understeer = "[SlipLockPropertiesCalc.Balance.Understeer] * 100";
-        const string Oversteer = "[SlipLockPropertiesCalc.Balance.Oversteer] * 100";
+        const string Understeer = "[DLP.Balance.Understeer] * 100";
+        const string Oversteer = "[DLP.Balance.Oversteer] * 100";
         AssertEffect(effects[0], "Understeer (front)", Understeer, Understeer, string.Empty, string.Empty, 40);
         AssertEffect(effects[1], "Oversteer (rear)", string.Empty, string.Empty, Oversteer, Oversteer, 35);
     }
@@ -152,9 +152,9 @@ internal sealed class ProfileGeneratorTests
         ProfileWriteResult pedals = ShakeItProfileGenerator.WriteHapticPedalProfile(target);
         ProfileWriteResult balance = ShakeItProfileGenerator.WriteBalanceProfile(target);
 
-        AssertWritten(data, Path.Combine(target, "SlipLock_DataExport.siprofile"), "Saved! Import in ShakeIT and restart.");
-        AssertWritten(pedals, Path.Combine(target, "SlipLock_HapticPedals.siprofile"), "Haptic pedal profile saved! Import in ShakeIT Motors tab.");
-        AssertWritten(balance, Path.Combine(target, "SlipLock_Balance.siprofile"), ShakeItProfileGenerator.BalanceSavedMessage);
+        AssertWritten(data, Path.Combine(target, "DLP_DataExport.siprofile"), "Saved! Import in ShakeIT and restart.");
+        AssertWritten(pedals, Path.Combine(target, "DLP_HapticPedals.siprofile"), "Haptic pedal profile saved! Import in ShakeIT Motors tab.");
+        AssertWritten(balance, Path.Combine(target, "DLP_Balance.siprofile"), ShakeItProfileGenerator.BalanceSavedMessage);
 
         // Ids are real, distinct GUIDs within and across files.
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -206,6 +206,30 @@ internal sealed class ProfileGeneratorTests
             next++;
             return new Guid(next, 0, 0, new byte[8]).ToString();
         };
+    }
+
+    /// <summary>
+    /// The only intended v3 (DLP) differences to the v1 oracle: the profile name and the property prefix in formulas
+    /// (<c>[SlipLockPropertiesCalc.x]</c> became <c>[DLP.x]</c>). Applies them to <paramref name="v1"/> and checks how
+    /// many formulas were rewritten, so nothing else can differ unnoticed.
+    /// </summary>
+    private static JObject WithDlpNames(JObject v1, string profileName, int expectedFormulas)
+    {
+        const string V1Prefix = "[SlipLockPropertiesCalc.";
+        string dlpPrefix = "[" + ShakeItProfileGenerator.PropertyPrefix;
+        int rewritten = 0;
+        foreach (JToken token in v1.DescendantsAndSelf())
+        {
+            if (token is JValue value && value.Type == JTokenType.String && ((string)value).IndexOf(V1Prefix, StringComparison.Ordinal) >= 0)
+            {
+                value.Value = ((string)value).Replace(V1Prefix, dlpPrefix);
+                rewritten++;
+            }
+        }
+
+        Assert.Equal(expectedFormulas, rewritten, "formulas with the v1 prefix");
+        v1["Name"] = profileName;
+        return v1;
     }
 
     /// <summary>Parses like ShakeIT would see the text; date-like strings stay strings.</summary>

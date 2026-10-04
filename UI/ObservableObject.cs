@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace User.SlipLockPropertiesCalc.UI;
+namespace DivebombLogistics.UI;
 
 /// <summary>
 /// Minimal <see cref="INotifyPropertyChanged"/> base for view models and item models.

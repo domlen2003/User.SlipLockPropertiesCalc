@@ -1,8 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
-using User.SlipLockPropertiesCalc.UI.ViewModels;
+using DivebombLogistics.Haptics.UI.ViewModels;
 
-namespace User.SlipLockPropertiesCalc.UI.Controls;
+namespace DivebombLogistics.UI.Controls;
 
 /// <summary>
 /// Per-wheel display: a title and four vertical bars (FL FR / RL RR) with their values.

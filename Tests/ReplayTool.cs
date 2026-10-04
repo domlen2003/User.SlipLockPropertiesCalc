@@ -2,18 +2,18 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using User.SlipLockPropertiesCalc.Balance;
-using User.SlipLockPropertiesCalc.Balance.Recording;
-using User.SlipLockPropertiesCalc.Core;
-using User.SlipLockPropertiesCalc.Settings;
+using DivebombLogistics.Core;
+using DivebombLogistics.Haptics.Balance;
+using DivebombLogistics.Haptics.Balance.Recording;
+using DivebombLogistics.Haptics.Settings;
 
-namespace User.SlipLockPropertiesCalc.Tests;
+namespace DivebombLogistics.Tests;
 
 /// <summary>
 /// Offline replay of a balance recording (CSV written by <see cref="BalanceRecorder"/>) through a fresh estimator
 /// with default tuning and an empty car profile, printing a summary: sample counts, active time, understeer/oversteer
 /// statistics, gate distribution, deviation from the recorded outputs and the learned vehicle model.
-/// Used via <c>User.SlipLockPropertiesCalc.Tests.exe --replay recording.csv</c> to tune detectors on real laps.
+/// Used via <c>DivebombLogistics.Tests.exe --replay recording.csv</c> to tune detectors on real laps.
 /// </summary>
 internal static class ReplayTool
 {

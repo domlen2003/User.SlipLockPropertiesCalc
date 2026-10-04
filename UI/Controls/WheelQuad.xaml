@@ -1,10 +1,10 @@
-<UserControl x:Class="User.SlipLockPropertiesCalc.UI.Controls.WheelQuad"
+<UserControl x:Class="DivebombLogistics.UI.Controls.WheelQuad"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:local="clr-namespace:User.SlipLockPropertiesCalc.UI.Controls"
-             xmlns:conv="clr-namespace:User.SlipLockPropertiesCalc.UI.Converters"
+             xmlns:local="clr-namespace:DivebombLogistics.UI.Controls"
+             xmlns:conv="clr-namespace:DivebombLogistics.UI.Converters"
              x:Name="Root"
              mc:Ignorable="d">
     <!-- Four vertical bars in car layout (FL FR / RL RR) with a title; binds only to its own dependency properties. -->

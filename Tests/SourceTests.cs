@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
-using User.SlipLockPropertiesCalc.Balance;
-using User.SlipLockPropertiesCalc.Balance.Recording;
-using User.SlipLockPropertiesCalc.Balance.Sources;
-using User.SlipLockPropertiesCalc.Core;
-using User.SlipLockPropertiesCalc.Telemetry;
+using DivebombLogistics.Core;
+using DivebombLogistics.Core.Telemetry;
+using DivebombLogistics.Haptics.Balance;
+using DivebombLogistics.Haptics.Balance.Recording;
+using DivebombLogistics.Haptics.Balance.Sources;
 
-namespace User.SlipLockPropertiesCalc.Tests;
+namespace DivebombLogistics.Tests;
 
 /// <summary>Vehicle-state adapters, factory, CSV format, recorder and replay tool.</summary>
 internal sealed class SourceTests

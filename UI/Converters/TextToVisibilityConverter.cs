@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 
-namespace User.SlipLockPropertiesCalc.UI.Converters;
+namespace DivebombLogistics.UI.Converters;
 
 /// <summary>
 /// Non-empty string → <see cref="Visibility.Visible"/>, null/empty → <see cref="Visibility.Collapsed"/>.

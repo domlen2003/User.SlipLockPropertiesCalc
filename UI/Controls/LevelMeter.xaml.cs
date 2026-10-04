@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 
-namespace User.SlipLockPropertiesCalc.UI.Controls;
+namespace DivebombLogistics.UI.Controls;
 
 /// <summary>Compact horizontal level bar (0..<see cref="Maximum"/>) with the value printed next to it.</summary>
 public partial class LevelMeter : UserControl

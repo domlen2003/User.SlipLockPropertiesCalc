@@ -5,7 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 
-namespace User.SlipLockPropertiesCalc.Tests;
+namespace DivebombLogistics.Tests;
 
 /// <summary>Marks a test method. Methods may be static or instance (class needs a parameterless constructor).</summary>
 [AttributeUsage(AttributeTargets.Method)]

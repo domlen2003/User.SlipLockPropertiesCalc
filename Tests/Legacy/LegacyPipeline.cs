@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using User.SlipLockPropertiesCalc.Settings;
-using User.SlipLockPropertiesCalc.SlipLock;
+using DivebombLogistics.Haptics.Settings;
+using DivebombLogistics.Haptics.SlipLock;
 
-namespace User.SlipLockPropertiesCalc.Tests.Legacy;
+namespace DivebombLogistics.Tests.Legacy;
 
 /// <summary>
 /// Equivalence oracle: a verbatim port of the v1 slip/lock math (legacy <c>SlipLockPropertiesCalc.DataUpdate</c>
@@ -44,7 +44,7 @@ internal sealed class LegacyPipeline
     private double[] _envSlip = new double[4], _envLock = new double[4], _envABS = new double[4], _envTC = new double[4];
     private double _lastFrameTime = double.MinValue; // v1: DateTime.MinValue
 
-    public LegacyPipeline(PluginSettings settings, GamePreset preset)
+    public LegacyPipeline(HapticsSettings settings, GamePreset preset)
     {
         _preset = preset;
         _slipThrottleBlend = settings.SlipThrottleBlend; _tcThrottleBlend = settings.TCThrottleBlend;

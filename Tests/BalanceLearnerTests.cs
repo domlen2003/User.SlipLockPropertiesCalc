@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using DivebombLogistics.Core;
+using DivebombLogistics.Haptics.Balance;
 using Newtonsoft.Json;
-using User.SlipLockPropertiesCalc.Balance;
-using User.SlipLockPropertiesCalc.Core;
 
-namespace User.SlipLockPropertiesCalc.Tests;
+namespace DivebombLogistics.Tests;
 
 /// <summary>
 /// Synthetic-data tests for <see cref="BalanceLearner"/>, its numeric building blocks and <see cref="ParamResolver"/>.

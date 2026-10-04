@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using User.SlipLockPropertiesCalc.Core;
-using User.SlipLockPropertiesCalc.Settings;
-using User.SlipLockPropertiesCalc.SlipLock;
-using User.SlipLockPropertiesCalc.Tests.Legacy;
+using DivebombLogistics.Core;
+using DivebombLogistics.Haptics.Settings;
+using DivebombLogistics.Haptics.SlipLock;
+using DivebombLogistics.Tests.Legacy;
 
-namespace User.SlipLockPropertiesCalc.Tests;
+namespace DivebombLogistics.Tests;
 
 /// <summary>
 /// <see cref="SlipLockProcessor"/>: bit-exact equivalence with v1 (via <see cref="LegacyPipeline"/>) and the three
@@ -469,7 +469,7 @@ internal static class SlipLockProcessorTests
     private static void RunEquivalenceSequence(GamePreset preset, string presetName, int seed)
     {
         var random = new Random(seed);
-        PluginSettings settings = RandomSettings(random);
+        HapticsSettings settings = RandomSettings(random);
 
         var legacy = new LegacyPipeline(settings, preset);
         var processor = new SlipLockProcessor();
@@ -585,9 +585,9 @@ internal static class SlipLockProcessorTests
     }
 
     /// <summary>Post-processor settings, randomized once per sequence (v1 slider ranges, plus edge values).</summary>
-    private static PluginSettings RandomSettings(Random random)
+    private static HapticsSettings RandomSettings(Random random)
     {
-        var s = new PluginSettings
+        var s = new HapticsSettings
         {
             SlipThrottleBlend = Pick(random, 0.2, 20.0, random.NextDouble() * 100),
             TCThrottleBlend = Pick(random, 0.2, 50.0, random.NextDouble() * 100),

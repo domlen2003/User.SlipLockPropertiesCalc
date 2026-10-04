@@ -2,14 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using DivebombLogistics.Core;
+using DivebombLogistics.Core.Telemetry;
+using DivebombLogistics.Haptics.Balance;
+using DivebombLogistics.Haptics.Settings;
+using DivebombLogistics.Haptics.SlipLock;
 using Newtonsoft.Json;
-using User.SlipLockPropertiesCalc.Balance;
-using User.SlipLockPropertiesCalc.Core;
-using User.SlipLockPropertiesCalc.Settings;
-using User.SlipLockPropertiesCalc.SlipLock;
-using User.SlipLockPropertiesCalc.Telemetry;
 
-namespace User.SlipLockPropertiesCalc.Tests;
+namespace DivebombLogistics.Tests;
 
 /// <summary>
 /// Shared contract types: math helpers, envelope, gear parsing, telemetry reader helpers, game presets, max-G
@@ -17,8 +17,8 @@ namespace User.SlipLockPropertiesCalc.Tests;
 /// </summary>
 internal static class CoreTests
 {
-    /// <summary>A v1 <c>SlipLockPropertiesCalc.GeneralSettings.json</c> taken from the user's machine.</summary>
-    private const string V1SettingsJson =
+    /// <summary>A v1 <c>SlipLockPropertiesCalc.GeneralSettings.json</c> (SimHub common settings of the v1/v2 plugin) taken from the user's machine.</summary>
+    internal const string V1SettingsJson =
         "{\"SpeedWarningLevel\":100,\"SlipThrottleBlend\":20.0,\"TCThrottleBlend\":50.023490258166667,\"LockBrakeBlend\":20.0," +
         "\"ABSBrakeBlend\":50.404698051633375,\"SlipThreshold\":5.0967317914924566,\"LockThreshold\":5.0,\"TCThreshold\":5.0," +
         "\"ABSThreshold\":5.0,\"GateSlipOnThrottle\":true,\"GateLockOnBrake\":true,\"SlipAttackMs\":10.0,\"SlipReleaseMs\":100.0," +
@@ -325,13 +325,13 @@ internal static class CoreTests
     }
 
     // ------------------------------------------------------------------------------------------------------------
-    // PluginSettings
+    // HapticsSettings
     // ------------------------------------------------------------------------------------------------------------
 
     [Test]
-    public static void PluginSettings_LoadsV1File()
+    public static void HapticsSettings_LoadsV1File()
     {
-        var settings = JsonConvert.DeserializeObject<PluginSettings>(V1SettingsJson);
+        var settings = JsonConvert.DeserializeObject<HapticsSettings>(V1SettingsJson);
         settings.Normalize();
 
         Assert.Equal(20.0, settings.SlipThrottleBlend, "SlipThrottleBlend");
@@ -360,7 +360,7 @@ internal static class CoreTests
         Assert.Equal(GameCapabilities.Available, settings.GameCapabilities["lmu"].TCMode, "LMU TC");
 
         // v2 fields absent from the v1 file get their defaults.
-        Assert.Equal(PluginSettings.CurrentSchemaVersion, settings.SchemaVersion, "schema version");
+        Assert.Equal(HapticsSettings.CurrentSchemaVersion, settings.SchemaVersion, "schema version");
         Assert.Equal(2, settings.SchemaVersion, "schema version 2");
         Assert.False(settings.ShowDebugView, "debug view hidden by default");
         Assert.True(settings.UseShakeItWheelLock, "ShakeIT lock merge on by default");
@@ -368,9 +368,9 @@ internal static class CoreTests
     }
 
     [Test]
-    public static void PluginSettings_NormalizeRepairsNullsAndKeys()
+    public static void HapticsSettings_NormalizeRepairsNullsAndKeys()
     {
-        var settings = new PluginSettings
+        var settings = new HapticsSettings
         {
             GameCapabilities = new Dictionary<string, GameCapabilities>(StringComparer.Ordinal)
             {
@@ -389,9 +389,9 @@ internal static class CoreTests
         Assert.Equal(GameCapabilities.ModeUnknown, settings.GameCapabilities["IRacing"].WheelSpeedMode, "replacement is unknown");
         Assert.True(settings.BalanceCalibration != null && settings.BalanceCalibration.Count == 0, "calibration dictionary created");
         Assert.True(settings.Balance != null, "balance tuning created");
-        Assert.Equal(PluginSettings.CurrentSchemaVersion, settings.SchemaVersion, "schema version");
+        Assert.Equal(HapticsSettings.CurrentSchemaVersion, settings.SchemaVersion, "schema version");
 
-        var nullCaps = new PluginSettings { GameCapabilities = null };
+        var nullCaps = new HapticsSettings { GameCapabilities = null };
         nullCaps.Normalize();
         Assert.True(nullCaps.GameCapabilities != null && nullCaps.GameCapabilities.Count == 0, "null capabilities dictionary created");
 
@@ -400,9 +400,9 @@ internal static class CoreTests
     }
 
     [Test]
-    public static void PluginSettings_NormalizeClampsValues()
+    public static void HapticsSettings_NormalizeClampsValues()
     {
-        var settings = new PluginSettings
+        var settings = new HapticsSettings
         {
             SlipThrottleBlend = 150,
             TCThrottleBlend = -10,
@@ -429,9 +429,9 @@ internal static class CoreTests
     }
 
     [Test]
-    public static void PluginSettings_CopyToAndResetDefaults()
+    public static void HapticsSettings_CopyToAndResetDefaults()
     {
-        var settings = JsonConvert.DeserializeObject<PluginSettings>(V1SettingsJson);
+        var settings = JsonConvert.DeserializeObject<HapticsSettings>(V1SettingsJson);
         settings.UseShakeItWheelLock = false;
         var tuning = new SlipLockTuning { SlipSensitivity = 2.0, LockSensitivity = 3.0 };
         settings.CopyTo(tuning);
@@ -447,7 +447,7 @@ internal static class CoreTests
         Assert.Equal(3.0, tuning.LockSensitivity, "sensitivities untouched");
 
         settings.ResetSlipLockTuningToDefaults();
-        var defaults = new PluginSettings();
+        var defaults = new HapticsSettings();
         Assert.Equal(defaults.TCThrottleBlend, settings.TCThrottleBlend, "blend reset");
         Assert.Equal(defaults.ABSReleaseMs, settings.ABSReleaseMs, "release reset");
         Assert.Equal(defaults.GateSlipOnThrottle, settings.GateSlipOnThrottle, "gate reset");

@@ -1,9 +1,10 @@
 using System.Text;
-using User.SlipLockPropertiesCalc.Core;
-using User.SlipLockPropertiesCalc.Settings;
-using User.SlipLockPropertiesCalc.Telemetry;
+using DivebombLogistics.Core;
+using DivebombLogistics.Core.Telemetry;
+using DivebombLogistics.Haptics.Settings;
+using DivebombLogistics.Haptics.Telemetry;
 
-namespace User.SlipLockPropertiesCalc.Tests;
+namespace DivebombLogistics.Tests;
 
 /// <summary>Tests for the Telemetry module: slip source resolution, wheel-speed detection, capabilities, car identity.</summary>
 internal sealed class TelemetryTests
@@ -418,7 +419,7 @@ internal sealed class TelemetryTests
     [Test]
     public void Capabilities_TriStatesLevelsAndExportedFlags()
     {
-        var settings = new PluginSettings();
+        var settings = new HapticsSettings();
         var tracker = new CapabilityTracker(settings);
         tracker.Reset(Game);
         var reader = new FakeTelemetryReader();
@@ -459,7 +460,7 @@ internal sealed class TelemetryTests
     [Test]
     public void Capabilities_PersistOnlyIntoExistingEntry()
     {
-        var settings = new PluginSettings();
+        var settings = new HapticsSettings();
         var tracker = new CapabilityTracker(settings);
         tracker.Reset(Game);
         var reader = new FakeTelemetryReader();
@@ -599,14 +600,14 @@ internal sealed class TelemetryTests
 
         public DetectorFixture(string game = Game)
         {
-            Settings = new PluginSettings();
+            Settings = new HapticsSettings();
             Resolver = new SlipSourceResolver();
             Capabilities = new CapabilityTracker(Settings);
             Detector = new WheelSpeedModeDetector(Settings, Resolver, Capabilities);
             ChangeGame(game);
         }
 
-        public PluginSettings Settings { get; }
+        public HapticsSettings Settings { get; }
 
         public SlipSourceResolver Resolver { get; }
 

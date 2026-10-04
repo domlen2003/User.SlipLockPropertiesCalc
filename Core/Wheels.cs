@@ -1,4 +1,4 @@
-namespace User.SlipLockPropertiesCalc.Core;
+namespace DivebombLogistics.Core;
 
 /// <summary>
 /// Wheel indexing shared by every per-wheel array in the plugin.

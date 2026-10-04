@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
-using User.SlipLockPropertiesCalc.Balance;
-using User.SlipLockPropertiesCalc.Core;
+using DivebombLogistics.Core;
+using DivebombLogistics.Haptics.Balance;
 
-namespace User.SlipLockPropertiesCalc.Tests.Sim;
+namespace DivebombLogistics.Tests.Sim;
 
 /// <summary>
 /// "True" parameters of the simulated car: what a perfect estimator would discover. Defaults are a GT-like car

@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Input;
 
-namespace User.SlipLockPropertiesCalc.UI;
+namespace DivebombLogistics.UI;
 
 /// <summary>
 /// <see cref="ICommand"/> that delegates to an action. <see cref="CanExecuteChanged"/> is raised explicitly through

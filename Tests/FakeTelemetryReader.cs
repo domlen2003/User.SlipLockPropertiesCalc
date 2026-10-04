@@ -1,7 +1,7 @@
 using System.Collections.Generic;
-using User.SlipLockPropertiesCalc.Telemetry;
+using DivebombLogistics.Core.Telemetry;
 
-namespace User.SlipLockPropertiesCalc.Tests;
+namespace DivebombLogistics.Tests;
 
 /// <summary>Dictionary-backed <see cref="ITelemetryReader"/> for tests. Missing paths return null.</summary>
 internal sealed class FakeTelemetryReader : ITelemetryReader

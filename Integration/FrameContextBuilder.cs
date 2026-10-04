@@ -1,7 +1,7 @@
+using DivebombLogistics.Core.Telemetry;
 using GameReaderCommon;
-using User.SlipLockPropertiesCalc.Telemetry;
 
-namespace User.SlipLockPropertiesCalc.Integration;
+namespace DivebombLogistics.Integration;
 
 /// <summary>
 /// Copies SimHub's normalized <see cref="GameData"/> into the reusable <see cref="FrameContext"/> so the processing

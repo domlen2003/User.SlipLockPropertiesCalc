@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{833040C9-FE5E-4CCF-B21D-71979E049B6B}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>DivebombLogistics</RootNamespace>
+    <AssemblyName>DivebombLogistics.Plugin</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <LangVersion>10.0</LangVersion>
+    <FileAlignment>512</FileAlignment>
+    <TargetFrameworkProfile />
+    <Deterministic>true</Deterministic>
+    <!-- Copy the built DLL/PDB into SimHub after each build and remove the obsolete v1/v2 plugin DLL.
+         Disable with -p:DeployToSimHub=false. Deployment never fails the build (SimHub locks the DLL while running). -->
+    <DeployToSimHub Condition=" '$(DeployToSimHub)' == '' ">true</DeployToSimHub>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <StartAction>Program</StartAction>
+    <StartProgram>$(SIMHUB_INSTALL_PATH)SimHubWPF.exe</StartProgram>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- SimHub assemblies: resolved from the installed SimHub, never copied (Private=False). -->
+    <Reference Include="GameReaderCommon">
+      <HintPath>$(SIMHUB_INSTALL_PATH)GameReaderCommon.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="log4net">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(SIMHUB_INSTALL_PATH)log4net.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="MahApps.Metro">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(SIMHUB_INSTALL_PATH)MahApps.Metro.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(SIMHUB_INSTALL_PATH)Newtonsoft.Json.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="SimHub.Logging">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>$(SIMHUB_INSTALL_PATH)SimHub.Logging.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="SimHub.Plugins">
+      <HintPath>$(SIMHUB_INSTALL_PATH)SimHub.Plugins.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="WoteverCommon">
+      <HintPath>$(SIMHUB_INSTALL_PATH)WoteverCommon.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="WoteverLocalization">
+      <HintPath>$(SIMHUB_INSTALL_PATH)WoteverLocalization.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="System.Xml" />
+    <Reference Include="WindowsBase" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Wildcards: new files in these folders are picked up automatically. Tests\ is a separate project.
+         A new module folder needs one Compile line and, for its views, one Page line. -->
+    <Compile Include="DLP.cs" />
+    <Compile Include="Core\**\*.cs" />
+    <Compile Include="Framework\**\*.cs" />
+    <Compile Include="Integration\**\*.cs" />
+    <Compile Include="Haptics\**\*.cs" />
+    <Compile Include="SpeedDial\**\*.cs" />
+    <Compile Include="UI\**\*.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Include="UI\**\*.xaml;Haptics\UI\**\*.xaml;SpeedDial\UI\**\*.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Properties\DesignTimeResources.xaml" Condition="'$(DesignTime)'=='true' OR ('$(SolutionPath)'!='' AND Exists('$(SolutionPath)') AND '$(BuildingInsideVisualStudio)'!='true' AND '$(BuildingInsideExpressionBlend)'!='true')">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+      <ContainsDesignTimeResources>true</ContainsDesignTimeResources>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="sdkmenuicon.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- Deploy (skipped with -p:DeployToSimHub=false): copies DivebombLogistics.Plugin.dll/.pdb into SimHub and deletes the
+       obsolete v1/v2 plugin (User.SlipLockPropertiesCalc.dll/.pdb), otherwise SimHub would load both plugins. The old
+       plugin is deleted only when the new DLL was copied (or was already up to date) and exists in SimHub, so a failed
+       copy never leaves SimHub without the plugin. DLP migrates the old plugin's settings and car profiles on its first
+       start. Never fails the build. -->
+  <Target Name="DeployToSimHub" AfterTargets="Build" Condition=" '$(DeployToSimHub)' == 'true' AND '$(SIMHUB_INSTALL_PATH)' != '' ">
+    <ItemGroup>
+      <_SimHubDeployFiles Include="$(TargetDir)$(TargetName).dll;$(TargetDir)$(TargetName).pdb" />
+      <_SimHubObsoleteFiles Include="$(SIMHUB_INSTALL_PATH)User.SlipLockPropertiesCalc.dll" Condition="Exists('$(SIMHUB_INSTALL_PATH)User.SlipLockPropertiesCalc.dll')" />
+      <_SimHubObsoleteFiles Include="$(SIMHUB_INSTALL_PATH)User.SlipLockPropertiesCalc.pdb" Condition="Exists('$(SIMHUB_INSTALL_PATH)User.SlipLockPropertiesCalc.pdb')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_SimHubDeployFiles)" DestinationFolder="$(SIMHUB_INSTALL_PATH)" SkipUnchangedFiles="true" Retries="0" ContinueOnError="WarnAndContinue">
+      <!-- CopiedFiles also lists files skipped as up to date; a file that failed to copy is not in it. -->
+      <Output TaskParameter="CopiedFiles" ItemName="_SimHubCopiedFiles" />
+    </Copy>
+    <ItemGroup>
+      <_SimHubCopiedDll Include="@(_SimHubCopiedFiles)" Condition=" '%(Filename)%(Extension)' == '$(TargetName).dll' " />
+    </ItemGroup>
+    <PropertyGroup>
+      <_SimHubDeployed Condition=" '@(_SimHubCopiedDll)' != '' AND Exists('$(SIMHUB_INSTALL_PATH)$(TargetName).dll') ">true</_SimHubDeployed>
+    </PropertyGroup>
+    <Warning Condition=" '$(_SimHubDeployed)' != 'true' AND '@(_SimHubObsoleteFiles)' != '' " Text="DLP deploy: $(TargetName).dll was not deployed to $(SIMHUB_INSTALL_PATH); keeping the old Slip Lock Properties Calc plugin files @(_SimHubObsoleteFiles->'%(Filename)%(Extension)', ', ')." />
+    <Message Importance="high" Condition=" '$(_SimHubDeployed)' == 'true' AND '@(_SimHubObsoleteFiles)' != '' " Text="DLP deploy: deleting the obsolete Slip Lock Properties Calc plugin files @(_SimHubObsoleteFiles->'%(Filename)%(Extension)', ', ') from $(SIMHUB_INSTALL_PATH)" />
+    <Delete Files="@(_SimHubObsoleteFiles)" Condition=" '$(_SimHubDeployed)' == 'true' AND '@(_SimHubObsoleteFiles)' != '' " ContinueOnError="WarnAndContinue" />
+  </Target>
+</Project>

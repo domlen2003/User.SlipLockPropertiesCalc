@@ -1,6 +1,6 @@
 using System;
 
-namespace User.SlipLockPropertiesCalc.Core;
+namespace DivebombLogistics.Core;
 
 /// <summary>
 /// Small allocation-free math helpers. .NET Framework 4.8 lacks <c>Math.Clamp</c> and

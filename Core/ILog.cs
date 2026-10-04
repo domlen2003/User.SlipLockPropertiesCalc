@@ -1,4 +1,4 @@
-namespace User.SlipLockPropertiesCalc.Core;
+namespace DivebombLogistics.Core;
 
 /// <summary>
 /// Minimal logging abstraction so SimHub-independent modules (and tests) can report noteworthy events.

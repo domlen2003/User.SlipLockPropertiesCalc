@@ -1,8 +1,8 @@
 using System;
+using DivebombLogistics.Core.Telemetry;
 using SimHub.Plugins;
-using User.SlipLockPropertiesCalc.Telemetry;
 
-namespace User.SlipLockPropertiesCalc.Integration;
+namespace DivebombLogistics.Integration;
 
 /// <summary>
 /// Production <see cref="ITelemetryReader"/>: reads SimHub properties by full path through

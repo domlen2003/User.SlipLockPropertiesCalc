@@ -5,12 +5,13 @@ using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Threading;
+using DivebombLogistics.Core;
+using DivebombLogistics.Core.Persistence;
+using DivebombLogistics.Haptics.Balance;
+using DivebombLogistics.Haptics.Settings;
 using Newtonsoft.Json.Linq;
-using User.SlipLockPropertiesCalc.Balance;
-using User.SlipLockPropertiesCalc.Core;
-using User.SlipLockPropertiesCalc.Settings;
 
-namespace User.SlipLockPropertiesCalc.Tests;
+namespace DivebombLogistics.Tests;
 
 /// <summary>Tests of <see cref="JsonFile"/>, <see cref="CarProfileStore"/> and <see cref="SaveScheduler"/>.</summary>
 internal sealed class PersistenceTests
@@ -206,21 +207,21 @@ internal sealed class PersistenceTests
     public void BuildCarFileStem_TruncatesLongKeysAndHandlesSpecialNames()
     {
         string longKey = new string('x', 300);
-        string stem = CarProfileStore.BuildCarFileStem(longKey);
-        Assert.Equal(CarProfileStore.MaxFileNameStemLength + 9, stem.Length, "80 chars + '_' + 8 hex");
+        string stem = CarFileNaming.BuildCarFileStem(longKey);
+        Assert.Equal(CarFileNaming.MaxFileNameStemLength + 9, stem.Length, "80 chars + '_' + 8 hex");
         Assert.True(stem.StartsWith(new string('x', 80) + "_", StringComparison.Ordinal), "readable prefix");
-        Assert.False(CarProfileStore.BuildCarFileStem(longKey) == CarProfileStore.BuildCarFileStem(longKey + "y"), "long keys still unique");
+        Assert.False(CarFileNaming.BuildCarFileStem(longKey) == CarFileNaming.BuildCarFileStem(longKey + "y"), "long keys still unique");
 
-        Assert.True(CarProfileStore.BuildCarFileStem("CON").StartsWith("_CON_", StringComparison.Ordinal), "reserved device name");
-        Assert.True(CarProfileStore.BuildCarFileStem("  ").StartsWith("unnamed_", StringComparison.Ordinal), "blank key");
-        Assert.True(CarProfileStore.BuildCarFileStem(null).StartsWith("unnamed_", StringComparison.Ordinal), "null key");
-        Assert.True(CarProfileStore.BuildCarFileStem("car..").StartsWith("car_", StringComparison.Ordinal), "trailing dots trimmed");
-        Assert.Equal("LMU", CarProfileStore.SanitizeSegment(" LMU. "), "segment trimmed");
-        Assert.Equal("_NUL.txt", CarProfileStore.SanitizeSegment("NUL.txt"), "reserved with extension");
+        Assert.True(CarFileNaming.BuildCarFileStem("CON").StartsWith("_CON_", StringComparison.Ordinal), "reserved device name");
+        Assert.True(CarFileNaming.BuildCarFileStem("  ").StartsWith("unnamed_", StringComparison.Ordinal), "blank key");
+        Assert.True(CarFileNaming.BuildCarFileStem(null).StartsWith("unnamed_", StringComparison.Ordinal), "null key");
+        Assert.True(CarFileNaming.BuildCarFileStem("car..").StartsWith("car_", StringComparison.Ordinal), "trailing dots trimmed");
+        Assert.Equal("LMU", CarFileNaming.SanitizeSegment(" LMU. "), "segment trimmed");
+        Assert.Equal("_NUL.txt", CarFileNaming.SanitizeSegment("NUL.txt"), "reserved with extension");
 
         // Surrogate pair straddling the cut is not split.
         string emoji = new string('y', 79) + "😀" + "tail";
-        string cut = CarProfileStore.BuildCarFileStem(emoji);
+        string cut = CarFileNaming.BuildCarFileStem(emoji);
         Assert.Equal(new string('y', 79) + "_", cut.Substring(0, 80), "cut before the pair, no dangling high surrogate");
         Assert.Equal(79 + 9, cut.Length, "shortened by one char");
     }
@@ -228,9 +229,9 @@ internal sealed class PersistenceTests
     [Test]
     public void Fnv1a_MatchesReferenceVectors()
     {
-        Assert.Equal(0x811c9dc5u, CarProfileStore.Fnv1a(string.Empty), "empty");
-        Assert.Equal(0xe40c292cu, CarProfileStore.Fnv1a("a"), "a");
-        Assert.Equal(0xbf9cf968u, CarProfileStore.Fnv1a("foobar"), "foobar");
+        Assert.Equal(0x811c9dc5u, CarFileNaming.Fnv1a(string.Empty), "empty");
+        Assert.Equal(0xe40c292cu, CarFileNaming.Fnv1a("a"), "a");
+        Assert.Equal(0xbf9cf968u, CarFileNaming.Fnv1a("foobar"), "foobar");
     }
 
     // ---------------------------------------------------------------- corrupt files
@@ -491,7 +492,7 @@ internal sealed class PersistenceTests
 
         Assert.Equal(before, File.ReadAllText(path), "old content intact");
         Assert.Equal(4, log.Errors.Count, "three failed attempts and the final give-up: " + string.Join(" | ", log.Errors));
-        Assert.True(log.Errors[3].Contains("giving up"), "give-up logged");
+        Assert.True(log.Errors[3].IndexOf("giving up", StringComparison.OrdinalIgnoreCase) >= 0, "give-up logged");
     }
 
     [Test]
@@ -556,6 +557,67 @@ internal sealed class PersistenceTests
         Assert.Equal(260.0, store.Load(Sim, Car, Car, string.Empty).SlipSensitivity, "written to the real file");
     }
 
+    [Test]
+    public void Load_UnreadableFile_NextSessionContinuesFromTheSideFile()
+    {
+        using var dir = new TempDirectory();
+        var store = new CarProfileStore(dir.Path, NullLog.Instance, () => FixedUtc, new[] { 10 });
+        Assert.True(store.Save(store.Load(Sim, Car, Car, string.Empty)), "save");
+        string path = store.GetProfilePath(Sim, Car);
+        string side = CarProfileStore.UnsavedPath(path);
+
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            var session1 = new CarProfileStore(dir.Path, NullLog.Instance, () => FixedUtc, new[] { 10 });
+            CarProfile p1 = session1.Load(Sim, Car, Car, string.Empty);
+            p1.LockSensitivity = 300;
+            Assert.True(session1.Save(p1), "session 1 saved to the side file");
+
+            var session2 = new CarProfileStore(dir.Path, NullLog.Instance, () => FixedUtc, new[] { 10 });
+            Assert.Equal(300.0, session2.Load(Sim, Car, Car, string.Empty).LockSensitivity, "continues from the side file");
+
+            using (new FileStream(side, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                var session3 = new CarProfileStore(dir.Path, NullLog.Instance, () => FixedUtc, new[] { 10 });
+                CarProfile p3 = session3.Load(Sim, Car, Car, string.Empty);
+                Assert.Equal(CarProfile.DefaultSensitivity, p3.LockSensitivity, "defaults");
+                Assert.True(session3.Save(p3), "session 3 saved elsewhere");
+            }
+
+            Assert.Equal(300.0, JsonFile.Deserialize<CarProfile>(File.ReadAllText(side), out _).LockSensitivity, "side file not overwritten");
+            Assert.Equal(1, Directory.GetFiles(Path.GetDirectoryName(path), "*.unsaved-*.json").Length, "timestamped side file");
+        }
+    }
+
+    [Test]
+    public void HapticsSettings_SecondLockedSessionContinuesFromTheSideFile()
+    {
+        using var dir = new TempDirectory();
+        string path = HapticsSettingsStore.GetPath(dir.Path);
+        string side = Path.Combine(dir.Path, HapticsSettingsStore.UnsavedFileName);
+        var saved = new HapticsSettings();
+        saved.Normalize();
+        JsonFile.WriteAllTextAtomic(path, JsonFile.Serialize(saved));
+        var edited = new HapticsSettings();
+        edited.Normalize();
+        edited.SlipThreshold = 7.5;
+        JsonFile.WriteAllTextAtomic(side, JsonFile.Serialize(edited)); // written by an earlier locked session
+
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            HapticsSettingsStore.LoadResult result = HapticsSettingsStore.Load(dir.Path, NullLog.Instance);
+            Assert.Equal(JsonReadStatus.IoError, result.Status);
+            Assert.Equal(7.5, result.Settings.SlipThreshold, "continues from the side file");
+            Assert.Equal(side, result.SavePath, "saves there again");
+
+            using (new FileStream(side, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                HapticsSettingsStore.LoadResult third = HapticsSettingsStore.Load(dir.Path, NullLog.Instance);
+                Assert.True(third.SavePath != side && third.SavePath.Contains(".unsaved-"), "timestamped: " + third.SavePath);
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- export / import
 
     [Test]
@@ -587,7 +649,7 @@ internal sealed class PersistenceTests
         string foreign = Path.Combine(dir.Path, "foreign.json");
         File.WriteAllText(foreign, "{ \"SlipThrottleBlend\": 20, \"GameCapabilities\": {} }");
         Assert.True(store.Import(foreign, out string foreignError) == null, "foreign JSON rejected");
-        Assert.True(foreignError.IndexOf("Not a SlipLock car profile", StringComparison.Ordinal) >= 0, foreignError);
+        Assert.True(foreignError.IndexOf("Not a DLP haptics car profile", StringComparison.Ordinal) >= 0, foreignError);
 
         string broken = Path.Combine(dir.Path, "broken.json");
         File.WriteAllText(broken, "{ \"SchemaVersion\": 1, \"CarKey\": ");
@@ -708,14 +770,14 @@ internal sealed class PersistenceTests
         Assert.Equal(250.0, store.Load(Sim, Car, Car, string.Empty).SlipSensitivity, "file untouched");
     }
 
-    // ---------------------------------------------------------------- SettingsWriter
+    // ---------------------------------------------------------------- AsyncJsonWriter
 
     [Test]
-    public void SettingsWriter_CopiesOnTheCallerThreadAndWritesOffIt()
+    public void AsyncJsonWriter_CopiesOnTheCallerThreadAndWritesOffIt()
     {
         var written = new List<double>();
         int writerThread = -1;
-        var writer = new SettingsWriter(copy =>
+        var writer = new AsyncJsonWriter<HapticsSettings>(copy =>
         {
             writerThread = Thread.CurrentThread.ManagedThreadId;
             lock (written)
@@ -723,7 +785,7 @@ internal sealed class PersistenceTests
                 written.Add(copy.SlipThreshold);
             }
         }, new RecordingLog());
-        var live = new PluginSettings { SlipThreshold = 12 };
+        var live = new HapticsSettings { SlipThreshold = 12 };
 
         writer.SaveAsync(live);
         live.SlipThreshold = 99; // edited right after: the queued copy must not change
@@ -734,11 +796,11 @@ internal sealed class PersistenceTests
     }
 
     [Test]
-    public void SettingsWriter_NewestWinsAndSaveSupersedesQueuedCopies()
+    public void AsyncJsonWriter_NewestWinsAndSaveSupersedesQueuedCopies()
     {
         var written = new List<double>();
         using var gate = new ManualResetEventSlim(false);
-        var writer = new SettingsWriter(copy =>
+        var writer = new AsyncJsonWriter<HapticsSettings>(copy =>
         {
             if (copy.SlipThreshold == 1)
             {
@@ -750,7 +812,7 @@ internal sealed class PersistenceTests
                 written.Add(copy.SlipThreshold);
             }
         }, new RecordingLog());
-        var live = new PluginSettings { SlipThreshold = 1 };
+        var live = new HapticsSettings { SlipThreshold = 1 };
         writer.SaveAsync(live);
         Thread.Sleep(50);
         for (int i = 2; i <= 5; i++)
@@ -772,13 +834,13 @@ internal sealed class PersistenceTests
     }
 
     [Test]
-    public void SettingsWriter_FailureIsLoggedNotThrown()
+    public void AsyncJsonWriter_FailureIsLoggedNotThrown()
     {
         var log = new RecordingLog();
-        var writer = new SettingsWriter(_ => throw new IOException("disk full"), log);
-        writer.SaveAsync(new PluginSettings());
+        var writer = new AsyncJsonWriter<HapticsSettings>(_ => throw new IOException("disk full"), log);
+        writer.SaveAsync(new HapticsSettings());
         Assert.True(writer.WaitForPendingWrites(TimeSpan.FromSeconds(5)), "writer finished");
-        Assert.False(writer.Save(new PluginSettings()), "synchronous save reports failure");
+        Assert.False(writer.Save(new HapticsSettings()), "synchronous save reports failure");
         Assert.Equal(2, log.Errors.Count, "both failures logged");
     }
 
@@ -1051,7 +1113,7 @@ internal sealed class PersistenceTests
     {
         public TempDirectory()
         {
-            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SlipLockTests_" + Guid.NewGuid().ToString("N"));
+            Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "DlpTests_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path);
         }
 

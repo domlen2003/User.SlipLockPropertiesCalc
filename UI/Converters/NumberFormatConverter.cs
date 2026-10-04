@@ -1,8 +1,9 @@
 using System;
 using System.Globalization;
 using System.Windows.Data;
+using DivebombLogistics.Haptics.UI;
 
-namespace User.SlipLockPropertiesCalc.UI.Converters;
+namespace DivebombLogistics.UI.Converters;
 
 /// <summary>
 /// NaN-safe number formatting for bindings. Single binding: the format comes from <c>ConverterParameter</c>.

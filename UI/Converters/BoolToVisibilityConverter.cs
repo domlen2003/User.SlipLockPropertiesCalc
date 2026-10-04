@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
 
-namespace User.SlipLockPropertiesCalc.UI.Converters;
+namespace DivebombLogistics.UI.Converters;
 
 /// <summary>
 /// <c>true</c> → <see cref="Visibility.Visible"/>, <c>false</c> → <see cref="Visibility.Collapsed"/>.

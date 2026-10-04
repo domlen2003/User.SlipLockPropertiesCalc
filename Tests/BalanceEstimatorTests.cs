@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using User.SlipLockPropertiesCalc.Balance;
-using User.SlipLockPropertiesCalc.Core;
-using User.SlipLockPropertiesCalc.Settings;
-using User.SlipLockPropertiesCalc.Tests.Sim;
+using DivebombLogistics.Core;
+using DivebombLogistics.Haptics.Balance;
+using DivebombLogistics.Haptics.Settings;
+using DivebombLogistics.Tests.Sim;
 
-namespace User.SlipLockPropertiesCalc.Tests;
+namespace DivebombLogistics.Tests;
 
 /// <summary>
 /// Balance filters and the understeer/oversteer estimator: spec section 8 scenarios and acceptance criteria,

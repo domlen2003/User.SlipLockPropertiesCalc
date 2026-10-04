@@ -1,0 +1,629 @@
+<UserControl x:Class="DivebombLogistics.SpeedDial.UI.SpeedDialView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:styles="clr-namespace:SimHub.Plugins.Styles;assembly=SimHub.Plugins"
+             xmlns:ui="clr-namespace:SimHub.Plugins.UI;assembly=SimHub.Plugins"
+             xmlns:local="clr-namespace:DivebombLogistics.SpeedDial.UI"
+             xmlns:vm="clr-namespace:DivebombLogistics.SpeedDial.UI.ViewModels"
+             xmlns:shared="clr-namespace:DivebombLogistics.UI"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=local:SpeedDialViewModel, IsDesignTimeCreatable=True}"
+             d:DesignWidth="960">
+    <!--
+        Simple view (always visible): status with current values and dial progress, the car's presets, set/reset pairs.
+        Expanders: "Button bindings" (SimHub ControlsEditor per action) and "Setup" (roles, slots, pairs, timing,
+        learning, diagnostics). The look shared with the Haptics tab (text styles, sliders) lives in
+        UI/SharedStyles.xaml: colors come from the SimHub theme, secondary text is dimmed with Opacity so it works in
+        light and dark themes.
+    -->
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <shared:SharedStyles />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- ===== Spacing ===== -->
+            <Thickness x:Key="RowButtonSpacing">0,0,6,4</Thickness>
+            <!-- Neutral translucent gray: readable as a frame on light and dark themes alike. -->
+            <SolidColorBrush x:Key="FrameBrush" Color="#808080" Opacity="0.35" />
+
+            <!-- ===== Edit styles ===== -->
+            <!-- Edit box committed on focus loss (binding default) or Enter (code-behind). -->
+            <Style x:Key="CommitOnEnter" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <EventSetter Event="KeyDown" Handler="OnCommitKeyDown" />
+            </Style>
+            <Style x:Key="SectionHeaderRow" TargetType="Grid">
+                <Setter Property="Margin" Value="0,0,0,4" />
+            </Style>
+
+            <!-- ===== Panels ===== -->
+            <ItemsPanelTemplate x:Key="WrapItemsPanel">
+                <WrapPanel />
+            </ItemsPanelTemplate>
+
+            <!-- ===== Item templates ===== -->
+            <DataTemplate x:Key="ChipTemplate" DataType="{x:Type vm:ValueChipItem}">
+                <Border Margin="0,0,8,6"
+                        Padding="8,3"
+                        BorderBrush="{StaticResource FrameBrush}"
+                        BorderThickness="1"
+                        CornerRadius="3"
+                        ToolTip="{Binding ToolTip}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsSupported}" Value="False">
+                                    <Setter Property="Opacity" Value="0.45" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Margin="0,0,6,0" Style="{StaticResource CaptionText}" Text="{Binding Label}" />
+                        <TextBlock FontSize="14" Style="{StaticResource ValueText}" Text="{Binding ValueText}" />
+                    </StackPanel>
+                </Border>
+            </DataTemplate>
+
+            <DataTemplate x:Key="DialChannelTemplate" DataType="{x:Type vm:DialChannelItem}">
+                <Grid Margin="0,1" Visibility="{Binding IsTargeted, Converter={StaticResource BoolToVisibility}}">
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                    <Setter Property="TextElement.FontWeight" Value="SemiBold" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" MinWidth="120" SharedSizeGroup="DialName" />
+                        <ColumnDefinition Width="Auto" MinWidth="130" SharedSizeGroup="DialTarget" />
+                        <ColumnDefinition Width="Auto" MinWidth="80" SharedSizeGroup="DialCurrent" />
+                        <ColumnDefinition Width="Auto" MinWidth="70" SharedSizeGroup="DialPresses" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Margin="0,0,16,0" VerticalAlignment="Center" Text="{Binding Name}" />
+                    <TextBlock Grid.Column="1" Style="{StaticResource NumberCell}" Text="{Binding TargetText}" />
+                    <TextBlock Grid.Column="2" Style="{StaticResource NumberCell}" Text="{Binding CurrentText}" />
+                    <TextBlock Grid.Column="3" Style="{StaticResource NumberCell}" Text="{Binding PressesText}" />
+                    <TextBlock Grid.Column="4" VerticalAlignment="Center" Text="{Binding ResultText}" />
+                </Grid>
+            </DataTemplate>
+
+            <DataTemplate x:Key="PresetValueTemplate" DataType="{x:Type vm:PresetValueItem}">
+                <StackPanel Margin="0,0,12,4" Orientation="Horizontal" ToolTip="{Binding ToolTip}">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsIncluded}" Value="False">
+                                    <Setter Property="Opacity" Value="0.6" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsSupported}" Value="False">
+                                    <Setter Property="Opacity" Value="0.45" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <CheckBox MinWidth="56" VerticalAlignment="Center" Content="{Binding Header}" IsChecked="{Binding IsIncluded}" />
+                    <TextBox Width="56" Style="{StaticResource CommitOnEnter}" Text="{Binding ValueText}" />
+                </StackPanel>
+            </DataTemplate>
+
+            <DataTemplate x:Key="PresetRowTemplate" DataType="{x:Type vm:PresetItem}">
+                <Border Padding="0,6,0,4" BorderBrush="{StaticResource FrameBrush}" BorderThickness="0,0,0,1">
+                    <StackPanel>
+                        <!-- Name column takes the free width (trimmed, at least MinWidth); the slot box and the four buttons
+                             stay together on the right, aligned across rows, so a narrow window never leaves a lone
+                             button on its own line. -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" MinWidth="120" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <RadioButton Margin="0,0,8,4"
+                                         VerticalAlignment="Center"
+                                         Command="{Binding SelectCommand}"
+                                         IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                         ToolTip="Selected preset: Next / Previous / Apply selected start from here." />
+                            <Grid Grid.Column="1" Margin="0,0,12,4" VerticalAlignment="Center">
+                                <TextBlock FontSize="13"
+                                           Style="{StaticResource ValueText}"
+                                           Text="{Binding Name}"
+                                           ToolTip="{Binding Name}"
+                                           Visibility="{Binding IsNotRenaming, Converter={StaticResource BoolToVisibility}}" />
+                                <!-- Focused with its text selected when it appears; leaving it saves the name (code-behind). -->
+                                <TextBox IsVisibleChanged="OnRenameBoxVisibleChanged"
+                                         LostKeyboardFocus="OnRenameBoxLostFocus"
+                                         Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"
+                                         Visibility="{Binding IsRenaming, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBox.InputBindings>
+                                        <KeyBinding Key="Enter" Command="{Binding CommitRenameCommand}" />
+                                        <KeyBinding Key="Escape" Command="{Binding CancelRenameCommand}" />
+                                    </TextBox.InputBindings>
+                                </TextBox>
+                            </Grid>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                <ComboBox Width="110"
+                                          Margin="0,0,12,4"
+                                          VerticalAlignment="Center"
+                                          DisplayMemberPath="Text"
+                                          IsEnabled="{Binding DataContext.HasCar, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                          ItemsSource="{Binding SlotOptions}"
+                                          SelectedItem="{Binding SelectedSlot}"
+                                          ToolTip="Dial button that applies this preset for this car (Dial slots: see Setup)." />
+                                <styles:SHButtonPrimary Margin="{StaticResource RowButtonSpacing}"
+                                                        Command="{Binding ApplyCommand}"
+                                                        ToolTip="Dial this preset now (replaces a running job).">
+                                    Apply
+                                </styles:SHButtonPrimary>
+                                <styles:SHButtonSecondary Margin="{StaticResource RowButtonSpacing}"
+                                                          Command="{Binding CaptureCommand}"
+                                                          ToolTip="Overwrite the preset with the current values (of its ticked channels; all channels when none is ticked).">
+                                    Capture current
+                                </styles:SHButtonSecondary>
+                                <styles:SHButtonSecondary Margin="{StaticResource RowButtonSpacing}"
+                                                          Command="{Binding BeginRenameCommand}"
+                                                          Visibility="{Binding IsNotRenaming, Converter={StaticResource BoolToVisibility}}">
+                                    Rename
+                                </styles:SHButtonSecondary>
+                                <styles:SHButtonSecondary Margin="{StaticResource RowButtonSpacing}"
+                                                          Command="{Binding CommitRenameCommand}"
+                                                          Visibility="{Binding IsRenaming, Converter={StaticResource BoolToVisibility}}">
+                                    Save name
+                                </styles:SHButtonSecondary>
+                                <styles:SHButtonSecondary Margin="{StaticResource RowButtonSpacing}"
+                                                          Command="{Binding DeleteCommand}"
+                                                          ToolTip="Delete this preset of the car.">
+                                    Delete...
+                                </styles:SHButtonSecondary>
+                            </StackPanel>
+                        </Grid>
+                        <ItemsControl Margin="26,2,0,0"
+                                      Focusable="False"
+                                      ItemsPanel="{StaticResource WrapItemsPanel}"
+                                      ItemTemplate="{StaticResource PresetValueTemplate}"
+                                      ItemsSource="{Binding Values}" />
+                    </StackPanel>
+                </Border>
+            </DataTemplate>
+
+            <DataTemplate x:Key="PairRowTemplate" DataType="{x:Type vm:PairItem}">
+                <!-- Fixed text widths keep the rows aligned (wide enough for five two-digit values and a dated capture time). The
+                     capture time and the buttons form one block, so in a narrow window they wrap below the texts together. -->
+                <WrapPanel Margin="0,2">
+                    <TextBlock Width="120" Margin="0,0,12,4" Style="{StaticResource ValueText}" Text="{Binding Name}" ToolTip="{Binding Name}" />
+                    <TextBlock Width="170" Margin="0,0,12,4" Style="{StaticResource CaptionText}" Text="{Binding ChannelsText}" ToolTip="{Binding ChannelsText}" />
+                    <TextBlock Width="270" Margin="0,0,12,4" VerticalAlignment="Center" Text="{Binding StoredText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding StoredText}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasStoredValues}" Value="False">
+                                        <Setter Property="Opacity" Value="0.6" />
+                                        <Setter Property="FontStyle" Value="Italic" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Width="150" Margin="0,0,12,4" Style="{StaticResource CaptionText}" Text="{Binding CapturedText}" />
+                        <styles:SHButtonSecondary Margin="{StaticResource RowButtonSpacing}"
+                                                  Command="{Binding SetCommand}"
+                                                  ToolTip="Store the current values of this pair's channels for this car.">
+                            Set now
+                        </styles:SHButtonSecondary>
+                        <styles:SHButtonSecondary Margin="{StaticResource RowButtonSpacing}"
+                                                  Command="{Binding ResetCommand}"
+                                                  ToolTip="Dial back to the stored values.">
+                            Reset now
+                        </styles:SHButtonSecondary>
+                    </StackPanel>
+                </WrapPanel>
+            </DataTemplate>
+
+            <DataTemplate x:Key="BindingTemplate" DataType="{x:Type vm:BindingItem}">
+                <ui:ControlsEditor Margin="0,0,0,4" ActionName="{Binding ActionName}" FriendlyName="{Binding FriendlyName}" />
+            </DataTemplate>
+
+            <DataTemplate x:Key="ChannelSetupTemplate" DataType="{x:Type vm:ChannelSetupItem}">
+                <Grid Margin="0,2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" MinWidth="100" SharedSizeGroup="SetupName" />
+                        <ColumnDefinition Width="Auto" MinWidth="70" SharedSizeGroup="SetupEnabled" />
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="SetupIncrease" />
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="SetupDecrease" />
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="SetupTest" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Margin="0,0,16,0" VerticalAlignment="Center" Text="{Binding Name}" />
+                    <CheckBox Grid.Column="1"
+                              Margin="0,0,16,0"
+                              VerticalAlignment="Center"
+                              IsChecked="{Binding Enabled}"
+                              ToolTip="Untick to make SpeedDial skip this channel." />
+                    <!-- A typed role is stored on focus loss or Enter (never half-typed), a picked role at once, and when the
+                         page is left (code-behind). -->
+                    <ComboBox Grid.Column="2"
+                              Width="165"
+                              Margin="0,0,12,0"
+                              IsEditable="True"
+                              ItemsSource="{Binding IncreaseRoleOptions}"
+                              KeyDown="OnRoleKeyDown"
+                              SelectionChanged="OnRoleSelectionChanged"
+                              Text="{Binding IncreaseRole, UpdateSourceTrigger=LostFocus}"
+                              ToolTip="Control Mapper role SpeedDial presses to raise the value." />
+                    <ComboBox Grid.Column="3"
+                              Width="165"
+                              Margin="0,0,12,0"
+                              IsEditable="True"
+                              ItemsSource="{Binding DecreaseRoleOptions}"
+                              KeyDown="OnRoleKeyDown"
+                              SelectionChanged="OnRoleSelectionChanged"
+                              Text="{Binding DecreaseRole, UpdateSourceTrigger=LostFocus}"
+                              ToolTip="Control Mapper role SpeedDial presses to lower the value." />
+                    <StackPanel Grid.Column="4" Margin="0,0,12,0" Orientation="Horizontal">
+                        <styles:SHButtonSecondary MinWidth="40"
+                                                  Margin="0,0,4,0"
+                                                  Command="{Binding TestDecreaseCommand}"
+                                                  ToolTip="Send one press of the Decrease role (the game should show the value change).">
+                            −
+                        </styles:SHButtonSecondary>
+                        <styles:SHButtonSecondary MinWidth="40"
+                                                  Command="{Binding TestIncreaseCommand}"
+                                                  ToolTip="Send one press of the Increase role (the game should show the value change).">
+                            +
+                        </styles:SHButtonSecondary>
+                    </StackPanel>
+                    <!-- Under the role boxes (the row is already wide): the current value and maximum, and the answer to this
+                         row's last test press, right where the button was clicked. -->
+                    <WrapPanel Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="4" Margin="0,2,0,2">
+                        <TextBlock Margin="0,0,16,0"
+                                   Style="{StaticResource CaptionText}"
+                                   Text="{Binding InfoText}"
+                                   Visibility="{Binding InfoText, Converter={StaticResource TextToVisibility}}" />
+                        <TextBlock Style="{StaticResource CaptionText}"
+                                   Text="{Binding LastTestText}"
+                                   Visibility="{Binding LastTestText, Converter={StaticResource TextToVisibility}}" />
+                    </WrapPanel>
+                </Grid>
+            </DataTemplate>
+
+            <DataTemplate x:Key="PairChannelTemplate" DataType="{x:Type vm:PairChannelOption}">
+                <CheckBox Margin="0,0,14,0"
+                          VerticalAlignment="Center"
+                          Content="{Binding Label}"
+                          IsChecked="{Binding IsIncluded}"
+                          ToolTip="{Binding ToolTip}" />
+            </DataTemplate>
+
+            <DataTemplate x:Key="PairDefinitionTemplate" DataType="{x:Type vm:PairDefinitionItem}">
+                <StackPanel Margin="0,2" Orientation="Horizontal">
+                    <TextBlock Width="60" Style="{StaticResource CaptionText}" Text="{Binding Caption}" />
+                    <TextBox Width="180"
+                             Margin="0,0,16,0"
+                             Style="{StaticResource CommitOnEnter}"
+                             Text="{Binding Name}"
+                             ToolTip="Name shown in the Set / Reset list and the button bindings." />
+                    <ItemsControl Focusable="False"
+                                  ItemsPanel="{StaticResource WrapItemsPanel}"
+                                  ItemTemplate="{StaticResource PairChannelTemplate}"
+                                  ItemsSource="{Binding Channels}" />
+                </StackPanel>
+            </DataTemplate>
+
+            <DataTemplate x:Key="LearningTemplate" DataType="{x:Type vm:LearningItem}">
+                <Grid Margin="0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" MinWidth="120" SharedSizeGroup="LearnName" />
+                        <ColumnDefinition Width="Auto" MinWidth="190" SharedSizeGroup="LearnDirection" />
+                        <ColumnDefinition Width="Auto" MinWidth="80" SharedSizeGroup="LearnStep" />
+                        <ColumnDefinition Width="Auto" MinWidth="140" SharedSizeGroup="LearnRange" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Margin="0,0,16,0" VerticalAlignment="Center" Text="{Binding Name}" />
+                    <TextBlock Grid.Column="1" Margin="0,0,16,0" VerticalAlignment="Center" Text="{Binding DirectionText}" />
+                    <TextBlock Grid.Column="2" Style="{StaticResource NumberCell}" Text="{Binding StepText}" />
+                    <TextBlock Grid.Column="3" Style="{StaticResource NumberCell}" Text="{Binding RangeText}" />
+                    <styles:SHButtonSecondary Grid.Column="4"
+                                              Margin="{StaticResource RowButtonSpacing}"
+                                              Command="{Binding ResetCommand}"
+                                              ToolTip="Forget what was learned about this channel for this car.">
+                        Reset
+                    </styles:SHButtonSecondary>
+                </Grid>
+            </DataTemplate>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="0,0,8,16">
+
+            <!-- ================================ STATUS ================================ -->
+            <styles:SHSection Title="SPEED DIAL" ShowSeparator="True">
+                <StackPanel>
+                    <TextBlock FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap">
+                        <Run Text="{Binding GameText, Mode=OneWay}" /><Run Text="  ·  " /><Run Text="{Binding CarText, Mode=OneWay}" />
+                    </TextBlock>
+                    <ItemsControl Margin="0,8,0,4"
+                                  Focusable="False"
+                                  ItemsPanel="{StaticResource WrapItemsPanel}"
+                                  ItemTemplate="{StaticResource ChipTemplate}"
+                                  ItemsSource="{Binding Chips}" />
+                    <!-- Not styles:SHInlineInfo: its Text property is registered for another owner and cannot be bound. -->
+                    <Border Style="{StaticResource HintBanner}"
+                            Visibility="{Binding StatusHint, Converter={StaticResource TextToVisibility}}">
+                        <TextBlock Text="{Binding StatusHint}" TextWrapping="Wrap" />
+                    </Border>
+                    <TextBlock Style="{StaticResource StatusMessage}"
+                               Text="{Binding StatusText}"
+                               Visibility="{Binding StatusText, Converter={StaticResource TextToVisibility}}" />
+
+                    <!-- Dial job: hidden until the first job of the session. -->
+                    <Border Margin="0,0,0,8"
+                            Padding="8,4,8,6"
+                            BorderBrush="{DynamicResource AccentColorBrush}"
+                            BorderThickness="3,0,0,0"
+                            Visibility="{Binding ShowDial, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <DockPanel LastChildFill="True">
+                                <styles:SHButtonSecondary Margin="8,0,0,0"
+                                                          DockPanel.Dock="Right"
+                                                          Command="{Binding CancelDialCommand}"
+                                                          ToolTip="Stop dialing (the values reached so far stay).">
+                                    Cancel
+                                </styles:SHButtonSecondary>
+                                <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" TextWrapping="Wrap">
+                                    <Run Text="{Binding DialStateText, Mode=OneWay}" /><Run Text="  ·  " /><Run Text="{Binding DialLabelText, Mode=OneWay}" />
+                                </TextBlock>
+                            </DockPanel>
+                            <ProgressBar Height="6"
+                                         Margin="0,6,0,4"
+                                         Background="{StaticResource FrameBrush}"
+                                         Foreground="{DynamicResource AccentColorBrush}"
+                                         Maximum="1"
+                                         Minimum="0"
+                                         Value="{Binding DialProgress, Mode=OneWay}" />
+                            <TextBlock Style="{StaticResource CaptionText}" Text="{Binding DialProgressText}" />
+                            <TextBlock Style="{StaticResource HintText}"
+                                       Text="{Binding DialMessage}"
+                                       Visibility="{Binding DialMessage, Converter={StaticResource TextToVisibility}}" />
+                            <StackPanel Margin="0,4,0,0" Grid.IsSharedSizeScope="True">
+                                <Grid Style="{StaticResource SectionHeaderRow}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" MinWidth="120" SharedSizeGroup="DialName" />
+                                        <ColumnDefinition Width="Auto" MinWidth="130" SharedSizeGroup="DialTarget" />
+                                        <ColumnDefinition Width="Auto" MinWidth="80" SharedSizeGroup="DialCurrent" />
+                                        <ColumnDefinition Width="Auto" MinWidth="70" SharedSizeGroup="DialPresses" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Style="{StaticResource CaptionText}" Text="Channel" />
+                                    <TextBlock Grid.Column="1" Style="{StaticResource CaptionText}" Text="Start → target" />
+                                    <TextBlock Grid.Column="2" Style="{StaticResource CaptionText}" Text="Now" />
+                                    <TextBlock Grid.Column="3" Style="{StaticResource CaptionText}" Text="Presses" />
+                                    <TextBlock Grid.Column="4" Style="{StaticResource CaptionText}" Text="Result" />
+                                </Grid>
+                                <ItemsControl Focusable="False" ItemTemplate="{StaticResource DialChannelTemplate}" ItemsSource="{Binding DialChannelRows}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </styles:SHSection>
+
+            <!-- ================================ PRESETS ================================ -->
+            <styles:SHSection Title="PRESETS" ShowSeparator="True">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource HintText}" Text="{Binding PresetsHint}" />
+                    <Border Style="{StaticResource HintBanner}"
+                            Visibility="{Binding BrakeBiasHint, Converter={StaticResource TextToVisibility}}">
+                        <TextBlock Text="{Binding BrakeBiasHint}" TextWrapping="Wrap" />
+                    </Border>
+                    <ItemsControl Margin="0,0,0,8"
+                                  Focusable="False"
+                                  ItemTemplate="{StaticResource PresetRowTemplate}"
+                                  ItemsSource="{Binding Presets}" />
+                    <WrapPanel IsEnabled="{Binding HasCar}">
+                        <TextBlock Margin="0,0,8,8" Style="{StaticResource CaptionText}" Text="New preset name" />
+                        <TextBox Width="200"
+                                 Margin="{StaticResource ButtonSpacing}"
+                                 VerticalAlignment="Center"
+                                 Text="{Binding NewPresetName, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="Name of the new preset (empty: Preset n). Enter creates it from the current values.">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding NewPresetFromCurrentCommand}" />
+                            </TextBox.InputBindings>
+                        </TextBox>
+                        <styles:SHButtonPrimary Margin="{StaticResource ButtonSpacing}"
+                                                Command="{Binding NewPresetFromCurrentCommand}"
+                                                ToolTip="New preset with every channel the game reports, at its current value.">
+                            New preset from current values
+                        </styles:SHButtonPrimary>
+                        <styles:SHButtonSecondary Margin="{StaticResource ButtonSpacing}"
+                                                  Command="{Binding NewEmptyPresetCommand}"
+                                                  ToolTip="New preset without channels: tick and fill them in afterwards.">
+                            New empty preset
+                        </styles:SHButtonSecondary>
+                        <styles:SHButtonSecondary Margin="{StaticResource ButtonSpacing}"
+                                                  Command="{Binding ExportPresetsCommand}"
+                                                  ToolTip="Save this car's presets to a file.">
+                            Export presets...
+                        </styles:SHButtonSecondary>
+                        <styles:SHButtonSecondary Margin="{StaticResource ButtonSpacing}"
+                                                  Command="{Binding ImportPresetsCommand}"
+                                                  ToolTip="Add the presets of a file to this car (existing presets stay).">
+                            Import presets...
+                        </styles:SHButtonSecondary>
+                    </WrapPanel>
+                    <TextBlock Style="{StaticResource StatusMessage}"
+                               Text="{Binding PresetsStatus}"
+                               Visibility="{Binding PresetsStatus, Converter={StaticResource TextToVisibility}}" />
+                </StackPanel>
+            </styles:SHSection>
+
+            <!-- ================================ SET / RESET ================================ -->
+            <styles:SHSection Title="SET / RESET" ShowSeparator="True">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource HintText}"
+                               Text="Set stores the current values of a pair's channels for this car; Reset dials back to them. Define pairs under Setup and bind buttons under Button bindings." />
+                    <ItemsControl Focusable="False" ItemTemplate="{StaticResource PairRowTemplate}" ItemsSource="{Binding Pairs}" />
+                </StackPanel>
+            </styles:SHSection>
+
+            <!-- ================================ CONFIGURATION ================================ -->
+            <styles:SHSection Title="CONFIGURATION" ShowSeparator="True">
+                <StackPanel>
+                    <styles:SHExpander Header="Button bindings">
+                        <StackPanel Margin="0,8,0,0">
+                            <TextBlock Style="{StaticResource HintText}"
+                                       Text="Bind wheel buttons to the SpeedDial actions. Dial n applies the preset assigned to slot n of the current car; Next / Previous change the selected preset, Apply selected dials it." />
+                            <ItemsControl Focusable="False" ItemTemplate="{StaticResource BindingTemplate}" ItemsSource="{Binding Bindings}" />
+                        </StackPanel>
+                    </styles:SHExpander>
+
+                    <styles:SHExpander Margin="0,8,0,0" Header="Setup" IsExpanded="{Binding IsSetupExpanded}">
+                        <StackPanel Margin="0,8,0,0">
+                            <styles:SHSubSection Title="Control Mapper roles (all cars)">
+                                <StackPanel Grid.IsSharedSizeScope="True">
+                                    <TextBlock Style="{StaticResource HintText}"
+                                               Text="SpeedDial presses these Control Mapper output roles; map them to the game's in-car buttons in the Control Mapper plugin. Test sends a single press: the game should show the value change." />
+                                    <Grid Style="{StaticResource SectionHeaderRow}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" MinWidth="100" SharedSizeGroup="SetupName" />
+                                            <ColumnDefinition Width="Auto" MinWidth="70" SharedSizeGroup="SetupEnabled" />
+                                            <ColumnDefinition Width="Auto" SharedSizeGroup="SetupIncrease" />
+                                            <ColumnDefinition Width="Auto" SharedSizeGroup="SetupDecrease" />
+                                            <ColumnDefinition Width="Auto" SharedSizeGroup="SetupTest" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource CaptionText}" Text="Channel" />
+                                        <TextBlock Grid.Column="1" Style="{StaticResource CaptionText}" Text="Enabled" />
+                                        <TextBlock Grid.Column="2" Style="{StaticResource CaptionText}" Text="Increase role" />
+                                        <TextBlock Grid.Column="3" Style="{StaticResource CaptionText}" Text="Decrease role" />
+                                        <TextBlock Grid.Column="4" Style="{StaticResource CaptionText}" Text="Test press" />
+                                    </Grid>
+                                    <ItemsControl Focusable="False" ItemTemplate="{StaticResource ChannelSetupTemplate}" ItemsSource="{Binding ChannelSetup}" />
+                                    <WrapPanel Margin="0,8,0,0">
+                                        <styles:SHButtonSecondary Margin="{StaticResource ButtonSpacing}"
+                                                                  Command="{Binding RefreshRolesCommand}"
+                                                                  ToolTip="Read the Control Mapper's button roles again (after adding roles there).">
+                                            Refresh role list
+                                        </styles:SHButtonSecondary>
+                                        <TextBlock Margin="0,0,0,8" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Text="{Binding RolesText}" />
+                                    </WrapPanel>
+                                </StackPanel>
+                            </styles:SHSubSection>
+                            <styles:SHSectionSeparator />
+
+                            <styles:SHSubSection Title="Dial slots (all cars)">
+                                <!-- Same column width as the timing sliders (a TitledSlider squeezes its track when sized to content). -->
+                                <UniformGrid Columns="2">
+                                    <ContentControl Content="{Binding SlotCountSlider}"
+                                                    ContentTemplate="{StaticResource SliderItemTemplate}"
+                                                    Focusable="False" />
+                                </UniformGrid>
+                            </styles:SHSubSection>
+                            <styles:SHSectionSeparator />
+
+                            <styles:SHSubSection Title="Set / reset pairs (all cars)">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource HintText}"
+                                               Text="Choose the channels each pair stores. The stored values are kept per car." />
+                                    <ItemsControl Focusable="False" ItemTemplate="{StaticResource PairDefinitionTemplate}" ItemsSource="{Binding PairDefinitions}" />
+                                    <WrapPanel Margin="0,8,0,0">
+                                        <styles:SHButtonSecondary Margin="{StaticResource ButtonSpacing}" Command="{Binding AddPairCommand}">
+                                            Add pair
+                                        </styles:SHButtonSecondary>
+                                        <styles:SHButtonSecondary Margin="{StaticResource ButtonSpacing}"
+                                                                  Command="{Binding RemoveLastPairCommand}"
+                                                                  ToolTip="Remove the last pair (its button bindings stop doing anything).">
+                                            Remove last pair
+                                        </styles:SHButtonSecondary>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </styles:SHSubSection>
+                            <styles:SHSectionSeparator />
+
+                            <styles:SHSubSection Title="Timing (all cars)">
+                                <StackPanel>
+                                    <ItemsControl Focusable="False"
+                                                  ItemsPanel="{StaticResource TwoColumnPanel}"
+                                                  ItemTemplate="{StaticResource SliderItemTemplate}"
+                                                  ItemsSource="{Binding TimingSliders}" />
+                                    <WrapPanel>
+                                        <styles:SHButtonSecondary Margin="{StaticResource ButtonSpacing}"
+                                                                  Command="{Binding ResetTimingCommand}"
+                                                                  ToolTip="Restore every timing value to its default.">
+                                            Reset timing to defaults
+                                        </styles:SHButtonSecondary>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </styles:SHSubSection>
+                            <styles:SHSectionSeparator />
+
+                            <styles:SHSubSection Title="Learned for this car">
+                                <StackPanel Grid.IsSharedSizeScope="True">
+                                    <TextBlock Style="{StaticResource HintText}"
+                                               Text="SpeedDial learns from every press which way the Increase role moves a value and by how much. Reset a channel when its roles were changed." />
+                                    <Grid Style="{StaticResource SectionHeaderRow}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" MinWidth="120" SharedSizeGroup="LearnName" />
+                                            <ColumnDefinition Width="Auto" MinWidth="190" SharedSizeGroup="LearnDirection" />
+                                            <ColumnDefinition Width="Auto" MinWidth="80" SharedSizeGroup="LearnStep" />
+                                            <ColumnDefinition Width="Auto" MinWidth="140" SharedSizeGroup="LearnRange" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Style="{StaticResource CaptionText}" Text="Channel" />
+                                        <TextBlock Grid.Column="1" Style="{StaticResource CaptionText}" Text="Direction" />
+                                        <TextBlock Grid.Column="2" Style="{StaticResource CaptionText}" Text="Step" />
+                                        <TextBlock Grid.Column="3" Style="{StaticResource CaptionText}" Text="Values seen" />
+                                    </Grid>
+                                    <ItemsControl Focusable="False" ItemTemplate="{StaticResource LearningTemplate}" ItemsSource="{Binding Learning}" />
+                                    <WrapPanel Margin="0,8,0,0">
+                                        <styles:SHButtonSecondary Margin="{StaticResource ButtonSpacing}" Command="{Binding ResetAllLearningCommand}">
+                                            Reset all learned values...
+                                        </styles:SHButtonSecondary>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </styles:SHSubSection>
+                            <styles:SHSectionSeparator />
+
+                            <styles:SHSubSection Title="Diagnostics">
+                                <Grid Margin="{StaticResource BlockSpacing}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="160" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Margin="0,1" Style="{StaticResource CaptionText}" Text="Control Mapper" />
+                                    <TextBlock Grid.Column="1" Margin="0,1" Style="{StaticResource ValueText}" Text="{Binding ControlMapperText}" />
+                                    <TextBlock Grid.Row="1" Margin="0,1" Style="{StaticResource CaptionText}" Text="Telemetry source" />
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,1" Style="{StaticResource ValueText}" Text="{Binding TelemetryText}" />
+                                    <TextBlock Grid.Row="2" Margin="0,1" VerticalAlignment="Top" Style="{StaticResource CaptionText}" Text="Telemetry details" />
+                                    <TextBox Grid.Row="2" Grid.Column="1" Margin="0,1" Style="{StaticResource CopyableText}" Text="{Binding TelemetryDescription, Mode=OneWay}" />
+                                    <TextBlock Grid.Row="3" Margin="0,1" VerticalAlignment="Top" Style="{StaticResource CaptionText}" Text="Car file" />
+                                    <TextBox Grid.Row="3" Grid.Column="1" Margin="0,1" Style="{StaticResource CopyableText}" Text="{Binding CarFilePath, Mode=OneWay}" />
+                                    <TextBlock Grid.Row="4" Margin="0,1" VerticalAlignment="Top" Style="{StaticResource CaptionText}" Text="Last error" />
+                                    <TextBox Grid.Row="4" Grid.Column="1" Margin="0,1" Style="{StaticResource MultiLineText}" Text="{Binding LastError, Mode=OneWay}" />
+                                </Grid>
+                            </styles:SHSubSection>
+                        </StackPanel>
+                    </styles:SHExpander>
+                </StackPanel>
+            </styles:SHSection>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
